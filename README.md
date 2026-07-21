@@ -102,8 +102,9 @@ Two registrations (or one with an exposed API):
 
 1. **API** — *Expose an API* → set the Application ID URI to
    `api://<api-client-id>` and add a scope `access_as_user`.
-   Add App Roles matching the database roles: `superadmin`, `admin`,
-   `ap_analyst`, `approver`, `read_only`.
+   App Roles are optional — authorization reads `users.role` from Postgres,
+   not the token's `roles` claim. If you add them, match the database values:
+   `pp-superadmin`, `pp-admin`, `pp-ap_analyst`, `pp-approver`, `pp-read_only`.
 2. **SPA** — platform **Single-page application**, redirect URI
    `http://localhost:8080`. Grant it the API's `access_as_user` scope.
 
@@ -123,7 +124,7 @@ the identity; the first application user is inserted directly:
 
 ```sql
 INSERT INTO users (entra_oid, email, full_name, role)
-VALUES ('<oid-from-entra>', 'admin@example.com', 'Admin User', 'admin');
+VALUES ('<oid-from-entra>', 'admin@example.com', 'Admin User', 'pp-admin');
 ```
 
 Find the `oid` in the Entra portal under the user's profile, or decode it from a
