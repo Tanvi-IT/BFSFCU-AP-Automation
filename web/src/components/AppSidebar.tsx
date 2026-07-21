@@ -6,6 +6,11 @@ import {
   FileText,
   Users,
   AlertTriangle,
+  AlertOctagon,
+  CheckCircle2,
+  XCircle,
+  Upload,
+  UserCog,
   GitCompare,
   History,
   Settings,
@@ -42,11 +47,24 @@ import {
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Daily review work. These were previously only reachable from POCSidebar,
+ * which rendered when the signed-in tenant matched a hardcoded GUID. This
+ * build is single-tenant, so that check could never pass and the queues had
+ * no navigation at all despite the pages working.
+ */
+const queueNavItems = [
+  { title: "Upload Invoices", url: "/poc/upload", icon: Upload },
+  { title: "High-Confidence Queue", url: "/poc/high-confidence", icon: CheckCircle2 },
+  { title: "Low-Confidence Queue", url: "/poc/low-confidence", icon: AlertTriangle },
+  { title: "Exceptions", url: "/poc/exceptions", icon: AlertOctagon },
+  { title: "Declined", url: "/poc/declined", icon: XCircle },
+];
+
 const tenantNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Invoices", url: "/invoices", icon: FileText },
   { title: "Vendors", url: "/vendors", icon: Users },
-  { title: "Exceptions", url: "/exceptions", icon: AlertTriangle },
   { title: "Email Ingestion", url: "/email-ingestion-instructions", icon: Mail },
   { title: "ERP Mapping", url: "/erp-mapping", icon: GitCompare },
   { title: "Export History", url: "/exports/history", icon: History },
@@ -62,6 +80,8 @@ const intelligenceNavItems = [
 ];
 
 const superadminNavItems = [
+  { title: "User Management", url: "/poc/user-management", icon: UserCog },
+  { title: "AI Provider", url: "/poc/settings/ai-provider", icon: Brain },
   { title: "Email Routing Debugger", url: "/email-routing-debugger", icon: Mail },
   { title: "Audit", url: "/settings/audit", icon: ShieldCheck },
   { title: "Security", url: "/settings/security", icon: Lock },
@@ -93,6 +113,38 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-border">
       <SidebarContent className="bg-sidebar">
+        {/* Review Queues — the daily work */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2">
+            Review Queues
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {queueNavItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    tooltip={item.title}
+                  >
+                    <NavLink
+                      to={item.url}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
+                        "hover:bg-accent hover:text-accent-foreground",
+                        isActive(item.url) && "bg-accent text-accent-foreground font-medium"
+                      )}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {!collapsed && <span>{item.title}</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
         {/* Tenant Navigation */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2">

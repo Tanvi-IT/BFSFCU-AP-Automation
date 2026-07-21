@@ -8,8 +8,6 @@ import { useToast } from "@/hooks/use-toast";
 import { LogOut, Shield, ArrowLeft, Menu } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { POCSidebar } from "@/components/POCSidebar";
-import { isPocTenant } from "@/lib/pocConfig";
 
 interface LayoutProps {
   children: ReactNode;
@@ -17,8 +15,6 @@ interface LayoutProps {
 
 export const Layout = ({ children }: LayoutProps) => {
   const { signOut, user, isSuperAdmin, isMaker, isChecker, userRole, tenantId, tenantResolved } = useAuth();
-  // POC mode requires tenant match AND not superadmin
-  const isPoc = isPocTenant(tenantId) && !isSuperAdmin;
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -73,16 +69,14 @@ export const Layout = ({ children }: LayoutProps) => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full max-w-full overflow-hidden bg-background">
-        {isPoc ? <POCSidebar /> : <AppSidebar />}
+        <AppSidebar />
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           <header className="border-b border-[#0C2D4D] h-16 shrink-0 max-w-full overflow-hidden" style={{ backgroundColor: "#0C2D4D" }}>
             <div className="flex h-full min-w-0 items-center justify-between gap-4 px-4">
               <div className="flex min-w-0 items-center gap-4">
-                {!isPoc && (
-                  <SidebarTrigger className="h-8 w-8 text-white hover:text-white/80">
-                    <Menu className="h-4 w-4" />
-                  </SidebarTrigger>
-                )}
+                <SidebarTrigger className="h-8 w-8 text-white hover:text-white/80">
+                  <Menu className="h-4 w-4" />
+                </SidebarTrigger>
                 {showBackButton && (
                   <Button
                     variant="ghost"
