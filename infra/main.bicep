@@ -45,6 +45,15 @@ param openAiApiVersion string = '2025-01-01-preview'
 @description('True when the deployment is a reasoning model (gpt-5.x, o-series).')
 param openAiReasoningModel bool = true
 
+@description('''
+API key for the AI Services resource. Leave empty to use Managed Identity,
+which requires a Cognitive Services User role assignment on that resource —
+and creating one requires Owner or User Access Administrator. Supply a key when
+you only have Contributor.
+''')
+@secure()
+param aiKey string = ''
+
 @description('Postgres administrator login. Used to apply migrations; not used by the app at runtime.')
 param postgresAdminUser string = 'pgadmin'
 
@@ -58,7 +67,9 @@ param postgresEntraAdminObjectId string
 @description('Display name (UPN) of the Postgres Entra administrator.')
 param postgresEntraAdminName string
 
-var storageName = toLower('${namePrefix}st${uniqueString(resourceGroup().id)}')
+// Storage account names cap at 24 characters. uniqueString() returns 13, plus
+// "st", so the prefix is truncated to 9 to stay inside the limit.
+var storageName = toLower('${take(namePrefix, 9)}st${uniqueString(resourceGroup().id)}')
 var functionAppName = '${namePrefix}-api'
 var planName = '${namePrefix}-plan'
 var postgresName = '${namePrefix}-pg'
@@ -103,6 +114,14 @@ resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-0
 resource invoiceQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
   parent: queueService
   name: 'invoice-jobs'
+}
+
+// Flex Consumption stores the deployment package in a blob container rather
+// than mounting a file share.
+resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'deploymentpackage'
+  properties: { publicAccess: 'None' }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +196,19 @@ resource allowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@202
   }
 }
 
+// Azure Postgres refuses CREATE EXTENSION unless the extension is allow-listed
+// here; the parameter defaults to empty. Migration 0001 needs pgcrypto for
+// gen_random_uuid() and pg_trgm for vendor similarity matching.
+resource extensionsAllowList 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-12-01-preview' = {
+  parent: postgres
+  name: 'azure.extensions'
+  properties: {
+    value: 'PGCRYPTO,PG_TRGM'
+    source: 'user-override'
+  }
+  dependsOn: [ database ]
+}
+
 resource postgresEntraAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/administrators@2023-12-01-preview' = {
   parent: postgres
   name: postgresEntraAdminObjectId
@@ -185,18 +217,30 @@ resource postgresEntraAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/administr
     principalType: 'User'
     tenantId: entraTenantId
   }
-  dependsOn: [ database ]
+  // Must follow the configuration change, not run alongside it. Setting
+  // azure.extensions briefly puts the server into an updating state, and an
+  // Entra principal operation attempted during it fails with
+  // AadAuthOperationCannotBePerformedWhenServerIsNotAccessible.
+  dependsOn: [ database, extensionsAllowList ]
 }
 
 // ---------------------------------------------------------------------------
 // Function App — HTTP API and the queue-triggered worker
 // ---------------------------------------------------------------------------
+// Flex Consumption, not the classic Y1 Dynamic plan.
+//
+// This subscription reports zero App Service plan quota for Y1 and B1 in both
+// eastus and eastus2 — every classic SKU fails preflight with
+// SubscriptionIsOverQuotaForSku. FC1 validates, and is in any case the current
+// recommended hosting for Functions: faster cold starts and explicit
+// per-instance concurrency.
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: planName
   location: location
+  kind: 'functionapp'
   sku: {
-    name: 'Y1' // consumption
-    tier: 'Dynamic'
+    name: 'FC1'
+    tier: 'FlexConsumption'
   }
   properties: { reserved: true } // Linux
 }
@@ -209,19 +253,41 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
+    // Flex Consumption declares runtime, scaling and deployment here rather
+    // than through linuxFxVersion and FUNCTIONS_* app settings.
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storage.properties.primaryEndpoints.blob}deploymentpackage'
+          authentication: {
+            type: 'StorageAccountConnectionString'
+            storageAccountConnectionStringName: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 40
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: 'node'
+        version: '20'
+      }
+    }
     siteConfig: {
-      linuxFxVersion: 'Node|20'
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
       cors: {
         allowedOrigins: [ 'https://${swa.properties.defaultHostname}' ]
         supportCredentials: false
       }
-      appSettings: [
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
-        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~20' }
+      appSettings: concat([
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
+        {
+          name: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+        }
 
         // The Functions runtime's own storage. Uses a key; the application's
         // own blob/queue access below goes through Managed Identity.
@@ -249,8 +315,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'QUEUE_ACCOUNT_URL', value: storage.properties.primaryEndpoints.queue }
         { name: 'QUEUE_NAME', value: 'invoice-jobs' }
 
-        // No DOCINTEL_KEY or AOAI_KEY: with no key set, the code authenticates
-        // to both services with Managed Identity.
+        // credential.ts uses Managed Identity when no key is set. Both keys are
+        // the same value — one multi-service AI Services resource.
         { name: 'DOCINTEL_ENDPOINT', value: aiEndpoint }
         { name: 'AOAI_ENDPOINT', value: aiEndpoint }
         { name: 'AOAI_DEPLOYMENT', value: openAiDeployment }
@@ -259,7 +325,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         { name: 'ALLOWED_ORIGINS', value: 'https://${swa.properties.defaultHostname}' }
         { name: 'LOG_LEVEL', value: 'info' }
-      ]
+      ], empty(aiKey) ? [] : [
+        { name: 'DOCINTEL_KEY', value: aiKey }
+        { name: 'AOAI_KEY', value: aiKey }
+      ])
     }
   }
 }
@@ -281,30 +350,18 @@ resource swa 'Microsoft.Web/staticSites@2023-12-01' = {
 }
 
 // ---------------------------------------------------------------------------
-// Role assignments — the Function App's identity reaching Storage
+// No storage role assignments.
+//
+// blob.ts and queue.ts both prefer the AzureWebJobsStorage connection string
+// over DefaultAzureCredential, and that setting is a full connection string
+// above. Managed Identity role assignments for Storage would therefore never
+// be exercised — and creating them requires Owner or User Access
+// Administrator, which a Contributor does not have.
+//
+// To move Storage onto Managed Identity, set AzureWebJobsStorage to the
+// identity-based form (AzureWebJobsStorage__accountName) and grant Storage
+// Blob Data Contributor and Storage Queue Data Contributor separately.
 // ---------------------------------------------------------------------------
-var blobContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe' // Storage Blob Data Contributor
-var queueContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88' // Storage Queue Data Contributor
-
-resource blobRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: storage
-  name: guid(storage.id, functionApp.id, blobContributorRoleId)
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', blobContributorRoleId)
-    principalId: functionApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource queueRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: storage
-  name: guid(storage.id, functionApp.id, queueContributorRoleId)
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', queueContributorRoleId)
-    principalId: functionApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Outputs — consumed by provision.ps1

@@ -40,14 +40,14 @@ export default function UserManagement() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [newEmail, setNewEmail] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  const [newEntraOid, setNewEntraOid] = useState("");
   const [newRole, setNewRole] = useState("pp-ap_analyst");
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     return () => {
       setNewEmail("");
-      setNewPassword("");
+      setNewEntraOid("");
       setNewRole("pp-ap_analyst");
     };
   }, []);
@@ -68,7 +68,7 @@ export default function UserManagement() {
   useEffect(() => { fetchUsers(); }, [tenantId]);
 
   const handleAdd = async () => {
-    if (!newEmail || !newPassword) {
+    if (!newEmail || !newEntraOid) {
       toast({ variant: "destructive", title: "Email and Entra Object ID required" });
       return;
     }
@@ -77,13 +77,13 @@ export default function UserManagement() {
       // Entra owns identity: we grant an EXISTING directory user access to this
       // application rather than creating an account with a password.
       await usersApi.create({
-        entraOid: newPassword.trim(),
+        entraOid: newEntraOid.trim(),
         email: newEmail.trim(),
         role: newRole as any,
       });
       toast({ title: "Access granted", description: `${newEmail} added as ${ROLE_LABELS[newRole]}` });
       setNewEmail("");
-      setNewPassword("");
+      setNewEntraOid("");
       setNewRole("pp-ap_analyst");
       fetchUsers();
     } catch (err: any) {
@@ -152,14 +152,14 @@ export default function UserManagement() {
               onChange={e => setNewEmail(e.target.value)}
             />
             <Input
-              placeholder="Temporary password"
+              placeholder="Entra Object ID (GUID from Entra > Users)"
               type="text"
-              name="new-user-temp-password"
-              autoComplete="new-password"
+              name="new-user-entra-oid"
+              autoComplete="off"
               readOnly
               onFocus={e => e.target.removeAttribute("readonly")}
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
+              value={newEntraOid}
+              onChange={e => setNewEntraOid(e.target.value)}
             />
             <Select value={newRole} onValueChange={setNewRole}>
               <SelectTrigger>
@@ -167,6 +167,8 @@ export default function UserManagement() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pp-ap_analyst">AP Origination</SelectItem>
+                <SelectItem value="pp-approver">Approver</SelectItem>
+                <SelectItem value="pp-read_only">Read Only</SelectItem>
                 <SelectItem value="pp-admin">Admin</SelectItem>
               </SelectContent>
             </Select>
@@ -206,6 +208,8 @@ export default function UserManagement() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="pp-ap_analyst">AP Origination</SelectItem>
+                          <SelectItem value="pp-approver">Approver</SelectItem>
+                          <SelectItem value="pp-read_only">Read Only</SelectItem>
                           <SelectItem value="pp-admin">Admin</SelectItem>
                         </SelectContent>
                       </Select>
