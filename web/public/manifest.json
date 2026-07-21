@@ -1,0 +1,21 @@
+{
+  "name": "Clarus AP",
+  "short_name": "Clarus AP",
+  "description": "AI-powered accounts payable automation for enterprise finance teams",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#0B1C36",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "finance", "productivity"],
+  "lang": "en-US",
+  "dir": "ltr"
+}

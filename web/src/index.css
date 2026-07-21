@@ -1,0 +1,246 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Clarus AP Design System
+   Brand: Trustworthy, minimal, global, AI-native, confident, analytical
+   All colors MUST be HSL.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Clarus AP Light Mode Palette */
+    
+    /* Primary: Deep Navy - trust, finance, enterprise */
+    --primary: 215 67% 13%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 215 67% 18%;
+
+    /* Secondary: Emerald/Teal - positive actions, growth */
+    --secondary: 165 69% 39%;
+    --secondary-foreground: 0 0% 100%;
+
+    /* Accent: Electric Blue - interactive, modern */
+    --accent: 218 89% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Backgrounds */
+    --background: 220 43% 98%;
+    --foreground: 215 67% 13%;
+
+    /* Surface/Card */
+    --card: 0 0% 100%;
+    --card-foreground: 215 67% 13%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 67% 13%;
+
+    /* Muted */
+    --muted: 220 20% 96%;
+    --muted-foreground: 218 11% 45%;
+
+    /* Borders & Inputs */
+    --border: 218 25% 91%;
+    --input: 218 25% 91%;
+    --ring: 218 89% 60%;
+
+    /* Status Colors - Invoice & Risk */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 25 95% 53%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Risk level colors */
+    --risk-low: 142 76% 36%;
+    --risk-medium: 25 95% 53%;
+    --risk-high: 0 84% 50%;
+
+    /* Invoice status colors */
+    --status-ingested: 217 91% 53%;
+    --status-validated: 142 76% 36%;
+    --status-exception: 25 95% 53%;
+    --status-approved: 142 76% 36%;
+    --status-rejected: 0 84% 50%;
+    --status-exported: 218 89% 60%;
+    --status-draft: 218 11% 65%;
+    --status-submitted: 217 91% 53%;
+
+    /* Sidebar */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 215 67% 13%;
+    --sidebar-border: 218 25% 91%;
+    --sidebar-accent: 220 20% 96%;
+    --sidebar-accent-foreground: 215 67% 13%;
+
+    /* Radius */
+    --radius: 0.5rem;
+
+    /* Shadows - subtle, enterprise feel */
+    --shadow-sm: 0 1px 2px 0 hsl(215 67% 13% / 0.04);
+    --shadow-md: 0 4px 6px -1px hsl(215 67% 13% / 0.08);
+    --shadow-lg: 0 10px 15px -3px hsl(215 67% 13% / 0.1);
+    --shadow-glow: 0 0 20px hsl(218 89% 60% / 0.15);
+
+    /* Transitions - minimal, professional */
+    --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-fast: all 0.15s ease-out;
+  }
+
+  .dark {
+    /* Clarus AP Dark Mode Palette */
+    
+    /* Backgrounds */
+    --background: 219 43% 7%;
+    --foreground: 220 14% 96%;
+
+    /* Card/Surface */
+    --card: 221 39% 11%;
+    --card-foreground: 220 14% 96%;
+
+    --popover: 221 39% 11%;
+    --popover-foreground: 220 14% 96%;
+
+    /* Primary - lighter in dark mode for visibility */
+    --primary: 218 89% 60%;
+    --primary-foreground: 219 43% 7%;
+    --primary-hover: 218 89% 55%;
+
+    /* Secondary */
+    --secondary: 165 69% 35%;
+    --secondary-foreground: 0 0% 100%;
+
+    /* Muted */
+    --muted: 221 39% 15%;
+    --muted-foreground: 218 11% 65%;
+
+    /* Accent - same as light mode */
+    --accent: 218 89% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Status colors remain consistent */
+    --success: 142 76% 42%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 25 95% 53%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders */
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 218 89% 60%;
+
+    /* Sidebar */
+    --sidebar: 221 39% 11%;
+    --sidebar-foreground: 220 14% 96%;
+    --sidebar-border: 217 33% 20%;
+    --sidebar-accent: 221 39% 15%;
+    --sidebar-accent-foreground: 220 14% 96%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Tabular numbers for financial data */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Subtle hover scale for CTAs */
+  .hover-lift {
+    @apply transition-all duration-200 ease-out;
+  }
+  .hover-lift:hover {
+    @apply -translate-y-0.5;
+    box-shadow: var(--shadow-md);
+  }
+
+  /* Fade-up animation for hero sections */
+  .animate-fade-up {
+    animation: fadeUp 0.5s ease-out forwards;
+  }
+
+  /* Subtle scale on hover */
+  .hover-scale {
+    @apply transition-transform duration-200 ease-out;
+  }
+  .hover-scale:hover {
+    @apply scale-[1.02];
+  }
+
+  /* Glass effect for cards */
+  .glass {
+    @apply bg-card/80 backdrop-blur-sm border border-border/50;
+  }
+}
+
+@layer utilities {
+  /* Custom scrollbar for enterprise feel */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
