@@ -59,16 +59,9 @@ const ReconciliationEvents = () => {
 
   const fetchEvents = async () => {
     try {
-      let query: any = null;
-
-
-      if (!isSuperAdmin && tenantId) {
-        query = query.eq('tenant_id', tenantId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
+      // Was a stripped Supabase query builder — `let query: any = null` with the
+      // .eq() chain left in place, which threw before calling the API.
+      const data = await erpApi.reconciliation();
 
       setEvents((data || []) as ReconciliationEvent[]);
     } catch (error) {

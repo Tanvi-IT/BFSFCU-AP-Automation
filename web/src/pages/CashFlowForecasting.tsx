@@ -95,17 +95,10 @@ const CashFlowForecasting = () => {
     // Get historical invoice data for the last 90 days
     const startDate = subDays(new Date(), 90);
     
-    // Forecasting reads invoices through the API.
-    let query: any = null;
-
-    
-    if (!isSuperAdmin && tenantId) {
-      query = query.eq('tenant_id', tenantId);
-    }
-
-    const { data: invoices, error } = await query;
-    
-    if (error) throw error;
+    // Forecasting reads invoices through the API. The bulk port left the
+    // Supabase query builder stripped to `null` and the .eq() chain behind,
+    // so this threw before fetching anything.
+    const invoices = await invoicesApi.list({ limit: 1000 });
 
     // Aggregate by date
     const dailyTotals: Record<string, number> = {};
@@ -161,18 +154,11 @@ const CashFlowForecasting = () => {
   };
 
   const fetchInsights = async () => {
-    // Forecasting reads invoices through the API.
-    let query: any = null;
-
-
-    if (!isSuperAdmin && tenantId) {
-      query = query.eq('tenant_id', tenantId);
-    }
-
-    const { data, error } = await query;
-    if (!error && data) {
-      setInsights(data);
-    }
+    // AI-generated forecast insights were produced by a Supabase edge function
+    // that was not ported — cash-flow forecasting is on the not-ported list in
+    // README.md. There is no endpoint to call, so the list stays empty and the
+    // page shows its "No insights generated yet" state rather than throwing.
+    setInsights([]);
   };
 
   const fetchKPIs = async () => {

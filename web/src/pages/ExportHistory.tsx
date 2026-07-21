@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { erpApi } from "@/services/settings";
+import { invoicesApi } from "@/services";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Download, History, AlertCircle, CheckCircle, XCircle, Clock, Play } from "lucide-react";
 import { format } from "date-fns";
@@ -76,19 +77,13 @@ const ExportHistory = () => {
 
   const fetchExports = async () => {
     try {
-      let query: any = null;
-
-
-      if (!isSuperAdmin && tenantId) {
-        query = query.eq('tenant_id', tenantId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
+      // Was a leftover Supabase query builder: `let query: any = null` followed
+      // by query.eq('tenant_id', ...) — it threw before ever calling the API.
+      // Single-tenant, so there is no tenant filter to apply.
+      const data = await erpApi.exportHistory();
 
       setExports((data || []) as ExportRecord[]);
-      
+
       // Set last export time
       if (data && data.length > 0) {
         setLastExportTime(data[0].created_at);
@@ -105,31 +100,27 @@ const ExportHistory = () => {
     }
   };
 
+  /**
+   * Invoices approved and waiting to be exported.
+   *
+   * The bulk port pointed this at erpApi.exportHistory() — export history, not
+   * pending invoices — so the count was whatever the history length happened
+   * to be.
+   */
   const fetchPendingInvoices = async () => {
-    if (!tenantId) return;
-    
     try {
-      let data: any = await erpApi.exportHistory();
-      let error = null;
-
-
-      if (error) throw error;
-      setPendingInvoiceCount((data?.length ?? 0) || 0);
+      const rows = await invoicesApi.list({ status: "approved", limit: 1000 });
+      setPendingInvoiceCount(rows?.length ?? 0);
     } catch (error) {
-      console.error('[ExportHistory] Error (data?.length ?? 0)ing pending invoices:', error);
+      console.error('[ExportHistory] Error fetching pending invoices:', error);
     }
   };
 
+  /** Also mis-pointed at exportHistory() by the bulk port. */
   const fetchERPSettings = async () => {
-    if (!tenantId) return;
-    
     try {
-      let data: any = await erpApi.exportHistory();
-      let error = null;
-
-
-      if (error && error.code !== 'PGRST116') throw error;
-      setErpSettings(data);
+      const connectors = await erpApi.connectors();
+      setErpSettings(connectors?.[0] ?? null);
     } catch (error) {
       console.error('[ExportHistory] Error fetching ERP settings:', error);
     }

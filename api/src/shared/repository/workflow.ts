@@ -24,13 +24,20 @@ export async function approve(
   note?: string
 ): Promise<void> {
   await transaction(async (client) => {
-    const found = await client.query<StatusRow>(
-      `SELECT id, status, approved_at FROM invoices WHERE id = $1 FOR UPDATE`,
+    const found = await client.query<StatusRow & { submitted_by: string | null }>(
+      `SELECT id, status, approved_at, submitted_by FROM invoices WHERE id = $1 FOR UPDATE`,
       [invoiceId]
     );
 
     const invoice = found.rows[0];
     if (!invoice) throw AppError.notFound('Invoice not found');
+
+    // Segregation of duties: a submitter cannot approve their own invoice.
+    // approveMany() has always enforced this; this path did not, so the rule
+    // was bypassable one invoice at a time.
+    if (invoice.submitted_by && invoice.submitted_by === actorId) {
+      throw AppError.forbidden('You cannot approve an invoice you submitted yourself.');
+    }
 
     if (invoice.status === 'approved') {
       throw AppError.conflict('This invoice has already been approved');

@@ -109,10 +109,20 @@ export const useAuth = () => {
     notProvisioned,
 
     /**
-     * @deprecated Single-tenant system — there is no tenant. Present only so
-     * unmigrated pages keep compiling. Remove call sites during migration.
+     * @deprecated Single-tenant system — there is no tenant.
+     *
+     * This returns a constant rather than undefined because ~21 unmigrated
+     * pages still guard their data loads with `if (!tenantId) return;`. With
+     * undefined those guards bail before fetching and before clearing their
+     * loading flag, so the page spins forever — POCDashboard and every review
+     * queue did exactly that.
+     *
+     * The value is the nil UUID, not a label, so that the few pages still
+     * putting `tenant_id: tenantId` in a payload send something a uuid column
+     * would accept. Nothing server-side reads it; the API has no tenant
+     * concept. Remove the guards, then remove this.
      */
-    tenantId: undefined as string | undefined,
+    tenantId: "00000000-0000-0000-0000-000000000000" as string | undefined,
     /** @deprecated Retained for compile compatibility during migration. */
     tenantResolved: true,
     /** @deprecated MSAL owns the session; use `isAuthenticated`. */
