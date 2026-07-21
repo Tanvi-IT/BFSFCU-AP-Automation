@@ -4,8 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Shield, Lock, Server, FileCheck, Globe, Key, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
-import { isPocTenant } from "@/lib/pocConfig";
 
 const securityFeatures = [
   {
@@ -48,11 +46,9 @@ const securityFeatures = [
 
 export default function SecurityDocs() {
   const navigate = useNavigate();
-  const { tenantId, isSuperAdmin } = useAuth();
-  const isPoc = isPocTenant(tenantId) && !isSuperAdmin;
 
   const handleBack = () => {
-    navigate(isPoc ? "/poc/dashboard" : "/");
+    navigate("/dashboard");
   };
 
   return (
@@ -65,7 +61,7 @@ export default function SecurityDocs() {
           className="flex items-center gap-2 text-muted-foreground hover:text-foreground -ml-2"
         >
           <ArrowLeft className="h-4 w-4" />
-          {isPoc ? "Back to Dashboard" : "Back to Home"}
+          Back to Dashboard
         </Button>
 
         <div className="space-y-4">

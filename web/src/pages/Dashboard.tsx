@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { invoicesApi } from "@/services/invoices";
 import { vendorsApi } from "@/services";
-import { isPocTenant } from "@/lib/pocConfig";
 
 const Dashboard = () => {
   const { user, isSuperAdmin, tenantId } = useAuth();
@@ -34,13 +33,6 @@ const Dashboard = () => {
     criticalExceptions: 0,
   });
   const [statsLoading, setStatsLoading] = useState(true);
-
-  // Redirect POC tenant to POC dashboard
-  useEffect(() => {
-    if (isPocTenant(tenantId)) {
-      navigate("/poc/dashboard", { replace: true });
-    }
-  }, [tenantId, navigate]);
 
   useEffect(() => {
     const fetchStats = async () => {
