@@ -4,6 +4,7 @@ import peapodLogo from "@/assets/tenant-logos/peapod-logo.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { roleLabel } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
 import { LogOut, Shield, ArrowLeft, Menu } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -60,8 +61,11 @@ export const Layout = ({ children }: LayoutProps) => {
     // Show the actual role. `isMaker` was checked first here, but it is true
     // for admins too (isMaker = ap_analyst || isAdmin), so every admin was
     // mislabelled "AP Origination".
+    //
+    // roleLabel strips the "pp-" storage prefix, so the badge reads exactly as
+    // it did before roles were renamed for Entra.
     if (userRole) {
-      return <Badge className="bg-white/20 text-white border-white/30">{userRole === 'ap_analyst' ? 'AP Origination' : userRole}</Badge>;
+      return <Badge className="bg-white/20 text-white border-white/30">{roleLabel(userRole)}</Badge>;
     }
     return null;
   };

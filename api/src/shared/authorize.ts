@@ -11,7 +11,7 @@ import { AppError } from './errors';
 
 /** superadmin implicitly satisfies every role requirement. */
 export function hasRole(user: AppUser, allowed: readonly AppRole[]): boolean {
-  if (user.role === 'superadmin') return true;
+  if (user.role === 'pp-superadmin') return true;
   return allowed.includes(user.role);
 }
 
@@ -27,11 +27,11 @@ export function requireRole(user: AppUser, allowed: readonly AppRole[]): void {
 /** Convenience guards for common cases. */
 export const Roles = {
   /** Full administrative access. */
-  admin: ['admin'] as const,
+  admin: ['pp-admin'] as const,
   /** Can approve or decline invoices. */
-  approver: ['admin', 'approver'] as const,
+  approver: ['pp-admin', 'pp-approver'] as const,
   /** Can review and edit invoices in the queues. */
-  reviewer: ['admin', 'approver', 'ap_analyst'] as const,
+  reviewer: ['pp-admin', 'pp-approver', 'pp-ap_analyst'] as const,
   /** Any authenticated user, including read-only. */
-  any: ['admin', 'approver', 'ap_analyst', 'read_only'] as const,
+  any: ['pp-admin', 'pp-approver', 'pp-ap_analyst', 'pp-read_only'] as const,
 } satisfies Record<string, readonly AppRole[]>;

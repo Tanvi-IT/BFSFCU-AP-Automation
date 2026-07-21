@@ -147,7 +147,7 @@ export default function SecuritySettings() {
     }
   };
 
-  if (userRole !== "superadmin" && userRole !== "admin" && userRole !== "checker") {
+  if (userRole !== "pp-superadmin" && userRole !== "pp-admin" && userRole !== "checker") {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

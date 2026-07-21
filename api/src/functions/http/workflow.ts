@@ -218,7 +218,7 @@ app.http('invoice-notes', {
     }
 
     // Read-only users may view notes but not add them.
-    if (user.role === 'read_only') {
+    if (user.role === 'pp-read_only') {
       throw AppError.forbidden('Read-only users cannot add notes');
     }
 

@@ -9,7 +9,7 @@ export type InvoiceStatus =
   | 'rejected'
   | 'exported';
 export type InvoiceSource = 'manual_upload' | 'email' | 'api';
-export type AppRole = 'superadmin' | 'admin' | 'ap_analyst' | 'approver' | 'read_only' | 'maker' | 'checker';
+export type AppRole = 'pp-superadmin' | 'pp-admin' | 'pp-ap_analyst' | 'pp-approver' | 'pp-read_only' | 'maker' | 'checker';
 export type Severity = 'low' | 'medium' | 'high';
 
 export interface CanonicalInvoiceLineItem {

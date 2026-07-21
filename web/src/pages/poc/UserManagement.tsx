@@ -16,16 +16,22 @@ interface AppUser {
   created_at: string;
 }
 
+// Keys are the stored role values. "ap_origination" was never a real role —
+// the enum has ap_analyst — so those entries never matched anything.
 const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  ap_origination: "AP Origination",
-  superadmin: "Super Admin",
+  "pp-admin": "Admin",
+  "pp-ap_analyst": "AP Origination",
+  "pp-approver": "Approver",
+  "pp-read_only": "Read Only",
+  "pp-superadmin": "Super Admin",
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  admin: "bg-blue-50 text-blue-700 border-blue-200",
-  ap_origination: "bg-amber-50 text-amber-700 border-amber-200",
-  superadmin: "bg-purple-50 text-purple-700 border-purple-200",
+  "pp-admin": "bg-blue-50 text-blue-700 border-blue-200",
+  "pp-ap_analyst": "bg-amber-50 text-amber-700 border-amber-200",
+  "pp-approver": "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "pp-read_only": "bg-slate-50 text-slate-700 border-slate-200",
+  "pp-superadmin": "bg-purple-50 text-purple-700 border-purple-200",
 };
 
 export default function UserManagement() {
@@ -35,14 +41,14 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newRole, setNewRole] = useState("ap_origination");
+  const [newRole, setNewRole] = useState("pp-ap_analyst");
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     return () => {
       setNewEmail("");
       setNewPassword("");
-      setNewRole("ap_origination");
+      setNewRole("pp-ap_analyst");
     };
   }, []);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -78,7 +84,7 @@ export default function UserManagement() {
       toast({ title: "Access granted", description: `${newEmail} added as ${ROLE_LABELS[newRole]}` });
       setNewEmail("");
       setNewPassword("");
-      setNewRole("ap_origination");
+      setNewRole("pp-ap_analyst");
       fetchUsers();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Failed to create user", description: err.message });
@@ -160,8 +166,8 @@ export default function UserManagement() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ap_origination">AP Origination</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="pp-ap_analyst">AP Origination</SelectItem>
+                <SelectItem value="pp-admin">Admin</SelectItem>
               </SelectContent>
             </Select>
             <Button onClick={handleAdd} disabled={adding} className="w-full">
@@ -175,7 +181,7 @@ export default function UserManagement() {
         <div className="border rounded-lg bg-card">
           <div className="flex items-center gap-2 px-6 py-4 border-b">
             <Shield className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold">Current Users ({users.filter(u => u.role !== 'superadmin').length})</h2>
+            <h2 className="font-semibold">Current Users ({users.filter(u => u.role !== 'pp-superadmin').length})</h2>
           </div>
           {loading ? (
             <div className="flex justify-center py-12">
@@ -183,13 +189,13 @@ export default function UserManagement() {
             </div>
           ) : (
             <div className="divide-y">
-              {users.filter(u => u.role !== 'superadmin').map(u => (
+              {users.filter(u => u.role !== 'pp-superadmin').map(u => (
                 <div key={u.id} className="flex items-center justify-between px-6 py-4">
                   <div>
                     <p className="font-medium text-sm">{u.email}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {u.role === 'superadmin' ? (
+                    {u.role === 'pp-superadmin' ? (
                       <Badge className={`text-xs border ${ROLE_COLORS[u.role] || ''}`}>
                         {ROLE_LABELS[u.role] || u.role}
                       </Badge>
@@ -199,12 +205,12 @@ export default function UserManagement() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="ap_origination">AP Origination</SelectItem>
-                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="pp-ap_analyst">AP Origination</SelectItem>
+                          <SelectItem value="pp-admin">Admin</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
-                    {u.role !== 'superadmin' && (
+                    {u.role !== 'pp-superadmin' && (
                       <Button
                         variant="ghost"
                         size="icon"

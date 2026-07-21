@@ -39,7 +39,7 @@ app.http('erp-connectors', {
       return ok({ connectors });
     }
 
-    if (user.role === 'read_only') {
+    if (user.role === 'pp-read_only') {
       throw AppError.forbidden('Read-only users cannot create connectors');
     }
 
@@ -91,7 +91,7 @@ app.http('erp-mappings', {
       return ok({ mappings });
     }
 
-    if (user.role === 'read_only') {
+    if (user.role === 'pp-read_only') {
       throw AppError.forbidden('Read-only users cannot edit mappings');
     }
 

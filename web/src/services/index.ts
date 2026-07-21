@@ -138,7 +138,7 @@ export const adminApi = {
 // ---------------------------------------------------------------------------
 // Users (admin)
 // ---------------------------------------------------------------------------
-export type AppRole = "superadmin" | "admin" | "ap_analyst" | "approver" | "read_only";
+export type AppRole = "pp-superadmin" | "pp-admin" | "pp-ap_analyst" | "pp-approver" | "pp-read_only";
 
 export interface ManagedUser {
   id: string;

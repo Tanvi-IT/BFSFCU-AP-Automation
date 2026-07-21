@@ -12,7 +12,7 @@
  *     methods: ['GET'],
  *     authLevel: 'anonymous',        // we validate Entra tokens ourselves
  *     route: 'invoices',
- *     handler: createHandler({ roles: ['admin', 'ap_analyst'] }, async (ctx) => {
+ *     handler: createHandler({ roles: ['pp-admin', 'pp-ap_analyst'] }, async (ctx) => {
  *       return ok(await listInvoices());
  *     }),
  *   });

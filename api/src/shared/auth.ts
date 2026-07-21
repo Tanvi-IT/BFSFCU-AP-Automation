@@ -11,20 +11,26 @@ import type { HttpRequest } from '@azure/functions';
 import { config } from './config';
 import { AppError } from './errors';
 
-/** Application roles. Mirrors the existing app_role values. */
+/**
+ * Application roles. Mirrors the app_role enum values.
+ *
+ * Prefixed with "pp-" because these names double as Entra group names, and
+ * bare names like "admin" are too generic to claim in a shared directory.
+ * The prefix is storage and wire format only — the UI renders friendly labels.
+ */
 export type AppRole =
-  | 'superadmin'
-  | 'admin'
-  | 'ap_analyst'
-  | 'approver'
-  | 'read_only';
+  | 'pp-superadmin'
+  | 'pp-admin'
+  | 'pp-ap_analyst'
+  | 'pp-approver'
+  | 'pp-read_only';
 
 export const ALL_ROLES: readonly AppRole[] = [
-  'superadmin',
-  'admin',
-  'ap_analyst',
-  'approver',
-  'read_only',
+  'pp-superadmin',
+  'pp-admin',
+  'pp-ap_analyst',
+  'pp-approver',
+  'pp-read_only',
 ] as const;
 
 export function isAppRole(value: string): value is AppRole {

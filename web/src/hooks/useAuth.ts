@@ -7,8 +7,10 @@
  *
  * Gone for good — Entra owns these: signUp, email verification, password reset.
  *
- * Role note: the database stores five canonical roles
- * (superadmin, admin, ap_analyst, approver, read_only). The legacy booleans
+ * Role note: the database stores five canonical roles, prefixed "pp-" because
+ * the names double as Entra group names (pp-superadmin, pp-admin,
+ * pp-ap_analyst, pp-approver, pp-read_only). Never render these raw — use
+ * roleLabel() from @/lib/roles. The legacy booleans
  * isMaker / isChecker / isAPOrigination are aliases onto those, because in the
  * old implementation all three resolved to the same check.
  */
@@ -81,10 +83,10 @@ export const useAuth = () => {
 
   const role = user?.role;
 
-  const isSuperAdmin = role === "superadmin";
-  const isAdmin = role === "admin" || isSuperAdmin;
-  const isChecker = role === "approver" || role === "checker" || isAdmin;
-  const isMaker = role === "ap_analyst" || role === "maker" || isAdmin;
+  const isSuperAdmin = role === "pp-superadmin";
+  const isAdmin = role === "pp-admin" || isSuperAdmin;
+  const isChecker = role === "pp-approver" || role === "checker" || isAdmin;
+  const isMaker = role === "pp-ap_analyst" || role === "maker" || isAdmin;
 
   return {
     user,

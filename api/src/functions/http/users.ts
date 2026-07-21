@@ -62,7 +62,7 @@ app.http('users', {
           throw AppError.validation('A valid role is required');
         }
         // Only a superadmin may mint another superadmin.
-        if (role === 'superadmin' && user.role !== 'superadmin') {
+        if (role === 'pp-superadmin' && user.role !== 'pp-superadmin') {
           throw AppError.forbidden('Only a superadmin can grant the superadmin role');
         }
 
@@ -113,7 +113,7 @@ app.http('users-update', {
     if (role !== undefined && !isAppRole(role)) {
       throw AppError.validation('Invalid role');
     }
-    if (role === 'superadmin' && user.role !== 'superadmin') {
+    if (role === 'pp-superadmin' && user.role !== 'pp-superadmin') {
       throw AppError.forbidden('Only a superadmin can grant the superadmin role');
     }
     // Guard against an admin locking themselves out.

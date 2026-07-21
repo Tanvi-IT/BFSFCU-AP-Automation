@@ -92,8 +92,8 @@ export default function VendorDetail() {
   const [isVendorEditing, setIsVendorEditing] = useState(false);
   const [vendorEditForm, setVendorEditForm] = useState({ name: "", tax_id: "", bank_account: "", ach_routing_number: "", ach_account_number: "" });
 
-  const canEnrich = userRole === "admin" || userRole === "superadmin";
-  const canUpload = userRole === "admin" || userRole === "superadmin";
+  const canEnrich = userRole === "pp-admin" || userRole === "pp-superadmin";
+  const canUpload = userRole === "pp-admin" || userRole === "pp-superadmin";
   const canApproveVendor = isAdmin || isSuperAdmin;
 
   useEffect(() => {

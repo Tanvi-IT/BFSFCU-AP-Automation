@@ -93,7 +93,7 @@ export default function ERPConnectors() {
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [authValues, setAuthValues] = useState<Record<string, string>>({});
 
-  const canManage = userRole === "superadmin" || userRole === "admin";
+  const canManage = userRole === "pp-superadmin" || userRole === "pp-admin";
 
   // Fetch connectors
   const { data: connectors, isLoading: loadingConnectors } = useQuery({
@@ -197,7 +197,7 @@ export default function ERPConnectors() {
   };
 
   // Access control
-  if (userRole !== "superadmin" && userRole !== "admin" && userRole !== "checker") {
+  if (userRole !== "pp-superadmin" && userRole !== "pp-admin" && userRole !== "checker") {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
