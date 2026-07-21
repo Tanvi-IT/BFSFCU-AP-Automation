@@ -18,7 +18,6 @@ import VendorList from "./pages/VendorList";
 import VendorDetail from "./pages/VendorDetail";
 import PendingVendors from "./pages/PendingVendors";
 import UserManagement from "./pages/poc/UserManagement";
-import SystemInfo from "./pages/SystemInfo";
 import ERPMapping from "./pages/ERPMapping";
 import ERPSettings from "./pages/ERPSettings";
 import ExportHistory from "./pages/ExportHistory";
@@ -72,10 +71,9 @@ const App = () => {
 
             {/* Protected app pages */}
             {/*
-              POCDashboard is the landing page — it is the queue-oriented view
-              users know. /dashboard keeps pointing at it so every existing link
-              (post-login redirect, back buttons, quick actions) still works.
-              pages/Dashboard.tsx is currently unreferenced.
+              POCDashboard is the landing page — the queue-oriented view users
+              know. /dashboard points at it so every existing link (post-login
+              redirect, back buttons, quick actions) keeps working.
             */}
             <Route path="/dashboard" element={<AuthGate><POCDashboard /></AuthGate>} />
             <Route path="/invoices" element={<AuthGate><InvoiceList /></AuthGate>} />
@@ -84,7 +82,6 @@ const App = () => {
             <Route path="/vendors" element={<AuthGate><VendorList /></AuthGate>} />
             <Route path="/vendors/:id" element={<AuthGate><VendorDetail /></AuthGate>} />
             <Route path="/vendors/pending" element={<AuthGate><PendingVendors /></AuthGate>} />
-            <Route path="/system" element={<AuthGate><SystemInfo /></AuthGate>} />
             <Route path="/erp-mapping" element={<AuthGate><ERPMapping /></AuthGate>} />
             <Route path="/settings/erp" element={<AuthGate><ERPSettings /></AuthGate>} />
             <Route path="/exports/history" element={<AuthGate><ExportHistory /></AuthGate>} />

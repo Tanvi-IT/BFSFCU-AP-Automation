@@ -1,131 +1,120 @@
-# Azure Migration Workspace
+# BFSFCU Accounts Payable
 
-The Azure-native rebuild of the AP platform. Self-contained — nothing here
-depends on Supabase.
+Single-tenant accounts-payable system. Invoices arrive, are extracted by AI,
+reviewed by one person, approved by another, and exported to the ERP.
 
-See [`../docs/azure-architecture.md`](../docs/azure-architecture.md) for the
-design this implements.
+Azure-native: Entra ID for identity, Azure Functions for the API, PostgreSQL,
+Blob and Queue Storage, Document Intelligence and Azure OpenAI. Rebuilt from a
+Supabase original, which is retired.
 
-```
-azure/
-  api/                 Azure Functions app (TypeScript)
-    src/shared/        THE shared layer — auth, roles, db, logging, errors
-    src/functions/     thin route handlers (http / queue / timer)
-  web/                 React frontend (Vite + MSAL)
-    src/lib/api.ts     THE only way the browser reaches the backend
-    src/authConfig.ts  MSAL / Entra configuration
-  db/migrations/       Postgres schema, applied in filename order
-  infra/               Bicep IaC (not yet written)
-```
+---
 
-## Ground rules
+## Documentation
 
-1. **Everything goes through `src/shared`.** A handler that builds its own DB
-   client, parses its own `Authorization` header, or sets its own CORS header is
-   a bug — that is exactly the pattern being migrated away from.
-2. **Single tenant.** No `tenant_id`, no tenant scoping, no row-level security.
-   Authorization is role-based, enforced once in `createHandler`.
-3. **No secrets in code or in the database.** Managed Identity for Postgres,
-   Blob, Queue, Document Intelligence and Azure OpenAI. Key Vault for
-   third-party credentials.
-
-## Migration status — complete
-
-**Supabase is fully severed.** No `@supabase/*` dependency, no imports, no
-Supabase URL in the built bundle. The temporary shim has been deleted.
-
-| Piece | Status |
+| Document | Read it when |
 |---|---|
-| Function App + shared layer | done |
-| Database schema (7 migrations) | done |
-| Invoice pipeline (queue worker) | done |
-| 50 HTTP routes | done |
-| Frontend (47 files) | done |
-| SaaS/billing pages | archived (see `web/src/_archived`) |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | You need to understand how the system fits together, or why something is the way it is |
+| **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** | You are setting up locally, or debugging a local failure |
+| **[docs/PRODUCTION.md](docs/PRODUCTION.md)** | You are deploying, hardening for production, or setting up CI/CD |
+| **[infra/README.md](infra/README.md)** | You are provisioning Azure resources |
 
-**Type errors: 3** — all pre-existing `html2pdf` option typings, unrelated to
-the migration. The original repo had **57**.
+---
 
-### Not ported — these fail with a clear message rather than silently
+## Layout
 
-| Feature | Why |
-|---|---|
-| ERP export delivery (`export-invoice`) | Pushed to the ERP; the SFTP path was a stub in the original |
-| ERP master-data sync (`pull-erp-master`) | Requires ERP connectivity |
-| AI field-mapping suggestions | Needs the ERP subsystem |
-| Supplemental PDF merge | `pdf-lib` merge not ported |
-| Contract processing | AI contract extraction not ported |
-| Vendor enrichment / risk scoring | Analytics subsystem not ported |
-| Cash-flow forecasting | Forecast function not ported |
-| Stripe billing, tenant management, onboarding | Archived — multi-tenant SaaS, not applicable |
-
-Everything else — upload, extraction, vendor matching, duplicate detection,
-all four review queues, approve/decline/escalate, notes, audit, user admin,
-Prologue Excel export, settings, API keys, webhooks — is ported and working.
-
-## Local development
-
-Prerequisites — not currently installed on this machine:
-
-- **Azure Functions Core Tools v4** — `npm i -g azure-functions-core-tools@4 --unsafe-perm true`
-- **Azure CLI** — for `az login` and provisioning
-- **PostgreSQL 14+** locally, or an Azure Postgres instance
-- **Azurite** (local Blob/Queue emulator) — `npm i -g azurite`
-
-Run all three in separate terminals:
-
-```bash
-# 1. Storage emulator (Blob + Queue)
-# --skipApiVersionCheck: the storage SDK requests a newer REST API version than
-# Azurite supports; without it uploads fail. Emulator-only quirk.
-azurite --silent --skipApiVersionCheck --location ./.azurite
-
-# 2. API  →  http://localhost:7071
-cd azure/api
-npm install
-cp local.settings.json.example local.settings.json   # then fill in values
-npm start
-
-# 3. Web  →  http://localhost:8080
-cd azure/web
-npm install
-cp .env.example .env                                 # then fill in values
-npm run dev
+```
+api/            Azure Functions — HTTP routes and the queue worker
+  src/shared/     the shared layer: auth, roles, db, logging, errors
+  src/functions/  thin route handlers (http / queue)
+web/            React SPA — Vite, MSAL
+  src/lib/api.ts    the only way the browser reaches the backend
+  src/authConfig.ts MSAL / Entra configuration
+db/migrations/  numbered SQL, applied in filename order
+infra/          Bicep template and provisioning script
+docs/           the documents above
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:7071`, so the browser
-makes same-origin calls and CORS is not involved in development.
+---
 
-### Entra app registration
+## Quick start
 
-Two registrations (or one with an exposed API):
+Local development, assuming Node 20+, Docker and the Azure Functions Core
+Tools. Full detail in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-1. **API** — *Expose an API* → set the Application ID URI to
-   `api://<api-client-id>` and add a scope `access_as_user`.
-   App Roles are optional — authorization reads `users.role` from Postgres,
-   not the token's `roles` claim. If you add them, match the database values:
-   `pp-superadmin`, `pp-admin`, `pp-ap_analyst`, `pp-approver`, `pp-read_only`.
-2. **SPA** — platform **Single-page application**, redirect URI
-   `http://localhost:8080`. Grant it the API's `access_as_user` scope.
+```powershell
+# database
+docker run -d --name bfsfcu-pg -e POSTGRES_PASSWORD=postgres `
+  -e POSTGRES_DB=bfsfcu_ap -p 5432:5432 postgres:17
 
-Then fill `web/.env` and `api/local.settings.json` with the resulting ids.
+# storage emulator
+azurite --silent --skipApiVersionCheck --location .\.azurite
 
-Apply migrations in order:
+# api  -> http://localhost:7071
+cd api; npm install; npm start
 
-```bash
-psql "$PG_CONNECTION_STRING" -f ../db/migrations/0001_extensions_and_users.sql
+# web  -> http://localhost:8080
+cd web; npm install; npm run dev
 ```
 
-### Bootstrapping the first admin
+You also need two Entra app registrations and a row in `users` — there is no
+signup. Both are covered in the development guide.
 
-There is deliberately **no self-service signup and no admin-creation endpoint** —
-that endpoint was the critical vulnerability in the old system. Entra provisions
-the identity; the first application user is inserted directly:
+---
 
-```sql
-INSERT INTO users (entra_oid, email, full_name, role)
-VALUES ('<oid-from-entra>', 'admin@example.com', 'Admin User', 'pp-admin');
+## Deploying
+
+```powershell
+cd infra
+.\provision.ps1 -NamePrefix <prefix> `
+                -PostgresEntraAdminObjectId '<your-object-id>' `
+                -PostgresEntraAdminUpn '<you@company.com>' `
+                -PostgresAdminPassword (Read-Host 'pg password' -AsSecureString)
 ```
 
-Find the `oid` in the Entra portal under the user's profile, or decode it from a
-signed-in token.
+See [infra/README.md](infra/README.md) for prerequisites and the manual steps
+it prints at the end.
+
+---
+
+## Principles
+
+These are load-bearing. Reversing one silently will break something subtle.
+
+**Single tenant.** No `tenant_id`, no tenant scoping, no RLS. Authorization is
+role-based, enforced in one place.
+
+**Everything goes through `api/src/shared`.** A handler that builds its own DB
+client, parses its own auth header, or sets its own CORS header is a bug — that
+duplication is exactly what this rebuild removed.
+
+**Uploads return immediately.** Extraction runs in a queue-triggered worker.
+The browser never waits on the AI pipeline.
+
+**Identity and access are separate.** Entra proves who someone is; the `users`
+table decides whether they may use the application. A valid token with no row
+is rejected.
+
+**No secrets in the database.** Managed Identity where possible, Function App
+settings or Key Vault otherwise. The original stored provider keys in plaintext
+columns named `*_key_encrypted`.
+
+**A submitter cannot approve their own invoice.** Enforced server-side, on
+`submitted_by`, inside the transaction — not in the browser, and not bypassed
+by `pp-superadmin`.
+
+**Faithful port, not a redesign.** The UI and behaviour deliberately match the
+original so it stays testable against known-good behaviour.
+
+---
+
+## Not ported
+
+Each throws a clear "not available yet in the Azure build" error rather than
+failing silently:
+
+ERP export delivery and master-data sync (both were already stubs), AI
+field-mapping suggestions, supplemental PDF merge, contract processing, vendor
+enrichment and risk scoring, cash-flow forecast insights, email ingestion.
+
+Known gaps and rough edges are listed at the end of
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

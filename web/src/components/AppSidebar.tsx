@@ -21,7 +21,6 @@ import {
   Lock,
   Database,
   RefreshCw,
-  Server,
   KeyRound,
   Webhook,
   ChevronDown,
@@ -103,7 +102,6 @@ const superadminNavItems = [
   { title: "ERP Connectors", url: "/settings/erp/connectors", icon: Settings },
   { title: "API Keys", url: "/settings/api-keys", icon: KeyRound },
   { title: "Webhooks", url: "/settings/webhooks", icon: Webhook },
-  { title: "System", url: "/system", icon: Server },
 ];
 
 export function AppSidebar() {
