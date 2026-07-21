@@ -13,6 +13,7 @@ Supabase original, which is retired.
 
 | Document | Read it when |
 |---|---|
+| **[CONTEXT.md](CONTEXT.md)** | You are an AI assistant, or a developer starting cold — conventions, traps, and what will silently break |
 | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | You need to understand how the system fits together, or why something is the way it is |
 | **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** | You are setting up locally, or debugging a local failure |
 | **[docs/PRODUCTION.md](docs/PRODUCTION.md)** | You are deploying, hardening for production, or setting up CI/CD |
