@@ -1,6 +1,7 @@
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
+import { adminApi } from "@/services";
 import {
   LayoutDashboard,
   FileText,
@@ -8,9 +9,11 @@ import {
   AlertTriangle,
   AlertOctagon,
   CheckCircle2,
+  CheckCheck,
   XCircle,
   Upload,
   UserCog,
+  Trash2,
   GitCompare,
   History,
   Settings,
@@ -59,6 +62,18 @@ const queueNavItems = [
   { title: "Low-Confidence Queue", url: "/poc/low-confidence", icon: AlertTriangle },
   { title: "Exceptions", url: "/poc/exceptions", icon: AlertOctagon },
   { title: "Declined", url: "/poc/declined", icon: XCircle },
+  // Approved is a filtered view of the invoice list, not its own page, so its
+  // active state keys on the query string rather than the path.
+  { title: "Approved", url: "/invoices?status=approved", icon: CheckCheck },
+];
+
+/**
+ * Administration. Visible to any admin, matching the old shell — these were
+ * briefly placed under the superadmin group, which hid them from admins.
+ */
+const adminNavItems = [
+  { title: "AI Provider", url: "/poc/settings/ai-provider", icon: Brain },
+  { title: "User Management", url: "/poc/user-management", icon: UserCog },
 ];
 
 const tenantNavItems = [
@@ -80,8 +95,6 @@ const intelligenceNavItems = [
 ];
 
 const superadminNavItems = [
-  { title: "User Management", url: "/poc/user-management", icon: UserCog },
-  { title: "AI Provider", url: "/poc/settings/ai-provider", icon: Brain },
   { title: "Email Routing Debugger", url: "/email-routing-debugger", icon: Mail },
   { title: "Audit", url: "/settings/audit", icon: ShieldCheck },
   { title: "Security", url: "/settings/security", icon: Lock },
@@ -96,10 +109,15 @@ const superadminNavItems = [
 export function AppSidebar() {
   const { isSuperAdmin, isAdmin } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const [superadminOpen, setSuperadminOpen] = useState(true);
   const [intelligenceOpen, setIntelligenceOpen] = useState(true);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
   
   const canAccessIntelligence = isSuperAdmin || isAdmin;
 
@@ -107,7 +125,35 @@ export function AppSidebar() {
     if (path === "/dashboard") {
       return location.pathname === "/dashboard";
     }
+    // Approved is /invoices with a filter — match on the query, otherwise it
+    // would light up for every invoice-list view.
+    if (path === "/invoices?status=approved") {
+      return location.pathname === "/invoices" && location.search.includes("status=approved");
+    }
+    if (path === "/invoices") {
+      return location.pathname.startsWith("/invoices") && !location.search.includes("status=approved");
+    }
     return location.pathname.startsWith(path);
+  };
+
+  const handleReset = async () => {
+    if (resetConfirmText !== "DELETE") return;
+    setResetting(true);
+    setResetMessage(null);
+    try {
+      await adminApi.demoReset();
+      setResetMessage("Database cleared. Ready for fresh demo.");
+      setResetConfirmText("");
+      setTimeout(() => {
+        setShowResetDialog(false);
+        setResetMessage(null);
+        navigate("/dashboard");
+      }, 2000);
+    } catch (err) {
+      setResetMessage(`Error: ${err instanceof Error ? err.message : "Reset failed"}`);
+    } finally {
+      setResetting(false);
+    }
   };
 
   return (
@@ -271,7 +317,94 @@ export function AppSidebar() {
             </Collapsible>
           </SidebarGroup>
         )}
+
+        {/* Administration — any admin, matching the old shell */}
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2">
+              Administration
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminNavItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(item.url)}
+                      tooltip={item.title}
+                    >
+                      <NavLink
+                        to={item.url}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
+                          "hover:bg-accent hover:text-accent-foreground",
+                          isActive(item.url) && "bg-accent text-accent-foreground font-medium"
+                        )}
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        {!collapsed && <span>{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => setShowResetDialog(true)}
+                    tooltip="Reset Demo Database"
+                    className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" />
+                    {!collapsed && <span>Reset Demo Database</span>}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
+
+      {showResetDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-w-full mx-4">
+            <h2 className="text-lg font-bold text-red-600 mb-2">Reset Demo Database</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              This will permanently delete all invoices, vendors, and audit records.
+              This cannot be undone. Type <strong>DELETE</strong> to confirm.
+            </p>
+            <input
+              type="text"
+              value={resetConfirmText}
+              onChange={(e) => setResetConfirmText(e.target.value)}
+              placeholder="Type DELETE to confirm"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-red-400"
+            />
+            {resetMessage && (
+              <p className={`text-sm mb-3 ${resetMessage.startsWith("Error") ? "text-red-500" : "text-green-600"}`}>
+                {resetMessage}
+              </p>
+            )}
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => { setShowResetDialog(false); setResetConfirmText(""); setResetMessage(null); }}
+                className="px-4 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50"
+                disabled={resetting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={resetConfirmText !== "DELETE" || resetting}
+                className="px-4 py-2 text-sm rounded bg-red-500 text-white hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {resetting ? "Resetting..." : "Reset Database"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Sidebar>
   );
 }

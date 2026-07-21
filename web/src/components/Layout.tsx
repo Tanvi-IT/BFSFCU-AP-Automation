@@ -57,9 +57,9 @@ export const Layout = ({ children }: LayoutProps) => {
         </div>
       );
     }
-    if (isMaker) {
-      return <Badge className="bg-white/20 text-white border-white/30">AP Origination</Badge>;
-    }
+    // Show the actual role. `isMaker` was checked first here, but it is true
+    // for admins too (isMaker = ap_analyst || isAdmin), so every admin was
+    // mislabelled "AP Origination".
     if (userRole) {
       return <Badge className="bg-white/20 text-white border-white/30">{userRole === 'ap_analyst' ? 'AP Origination' : userRole}</Badge>;
     }

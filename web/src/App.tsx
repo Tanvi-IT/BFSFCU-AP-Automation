@@ -10,7 +10,6 @@ import { AuthGate } from "./components/AuthGate";
 import Auth from "./pages/Auth";
 
 // Protected app pages
-import Dashboard from "./pages/Dashboard";
 import InvoiceList from "./pages/InvoiceList";
 import InvoiceUpload from "./pages/InvoiceUpload";
 import InvoiceDetail from "./pages/InvoiceDetail";
@@ -72,7 +71,13 @@ const App = () => {
             <Route path="/auth" element={<AuthGate requireAuth={false}><Auth /></AuthGate>} />
 
             {/* Protected app pages */}
-            <Route path="/dashboard" element={<AuthGate><Dashboard /></AuthGate>} />
+            {/*
+              POCDashboard is the landing page — it is the queue-oriented view
+              users know. /dashboard keeps pointing at it so every existing link
+              (post-login redirect, back buttons, quick actions) still works.
+              pages/Dashboard.tsx is currently unreferenced.
+            */}
+            <Route path="/dashboard" element={<AuthGate><POCDashboard /></AuthGate>} />
             <Route path="/invoices" element={<AuthGate><InvoiceList /></AuthGate>} />
             <Route path="/invoices/:id" element={<AuthGate><InvoiceDetail /></AuthGate>} />
             <Route path="/exceptions" element={<AuthGate><ExceptionQueue /></AuthGate>} />
