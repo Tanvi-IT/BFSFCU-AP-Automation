@@ -1,11 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { activityApi } from "@/services";
 import { format } from "date-fns";
 import { Layout } from "@/components/Layout";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -26,119 +23,109 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Download, Eye, Search, Shield } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, Search, Shield, FileText } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { invoicesApi, type Invoice } from "@/services/invoices";
+import { activityApi } from "@/services";
 
-interface AuditLog {
-  id: string;
-  created_at: string;
-  tenant_id: string | null;
-  user_id: string | null;
-  entity_type: string;
-  entity_id: string;
-  action: string;
-  metadata: Record<string, unknown> | null;
-  ip_address: string | null;
-  user_agent: string | null;
-  actor_email?: string | null;
+const STATUSES = ["queued", "processing", "validated", "submitted", "approved", "declined", "exception"];
+
+function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "approved") return "default";
+  if (status === "declined" || status === "exception") return "destructive";
+  if (status === "queued" || status === "processing") return "secondary";
+  return "outline";
 }
 
-const ENTITY_TYPES = ["invoice", "vendor", "user", "settings", "export"];
-const ACTIONS = ["uploaded", "processed", "approved", "declined", "updated", "status_changed", "note_added", "bulk_imported", "user_created", "user_updated", "exported"];
+function actionVariant(action: string): "default" | "secondary" | "destructive" | "outline" {
+  switch (action) {
+    case "approved":
+      return "default";
+    case "declined":
+    case "deleted":
+      return "destructive";
+    case "uploaded":
+    case "processed":
+      return "secondary";
+    default:
+      return "outline";
+  }
+}
+
+/** The per-invoice history dialog. */
+function InvoiceHistory({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+  const { data: entries, isLoading } = useQuery({
+    queryKey: ["invoice-audit", invoice.id],
+    queryFn: () => activityApi.audit(invoice.id),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            {invoice.invoice_number || "Invoice"} — history
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="text-sm text-muted-foreground -mt-2 mb-2">
+          {invoice.vendor_name || "Unknown vendor"} · {invoice.currency} {invoice.total_amount}
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center py-10">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : !entries || entries.length === 0 ? (
+          <p className="py-8 text-center text-muted-foreground">No recorded activity for this invoice.</p>
+        ) : (
+          <ol className="relative border-l border-border ml-2 space-y-5 py-2">
+            {entries.map((e) => (
+              <li key={e.id} className="ml-4">
+                <div className="absolute -left-[7px] mt-1.5 h-3 w-3 rounded-full bg-primary" />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant={actionVariant(e.action)}>{e.action.replace(/_/g, " ")}</Badge>
+                  {(e.metadata as Record<string, unknown> | null)?.self_approved === true && (
+                    <Badge variant="destructive" className="text-[10px]">self-approved</Badge>
+                  )}
+                  <span className="text-sm font-medium">{e.actor_name || "System"}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(e.created_at), "PPp")}
+                  </span>
+                </div>
+                {e.metadata && Object.keys(e.metadata).length > 0 && (
+                  <pre className="mt-1 text-xs bg-muted rounded p-2 overflow-auto max-h-32">
+                    {JSON.stringify(e.metadata, null, 2)}
+                  </pre>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function AuditConsole() {
   const { isAdmin } = useAuth();
-  const [filters, setFilters] = useState({
-    entityType: "",
-    action: "",
-    search: "",
-    dateFrom: "",
-    dateTo: "",
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [selected, setSelected] = useState<Invoice | null>(null);
+
+  const { data: invoices, isLoading } = useQuery({
+    queryKey: ["audit-invoices", search, status],
+    queryFn: () =>
+      invoicesApi.list({
+        limit: 500,
+        ...(search ? { search } : {}),
+        ...(status ? { status: status as Invoice["status"] } : {}),
+      }),
   });
-  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
-
-  const { data: logs, isLoading } = useQuery({
-    queryKey: ["audit-logs", filters],
-    queryFn: async () => {
-      // Filtering is applied client-side; the API returns the recent window with
-      // the actor already joined, so there is no second lookup.
-      const entries = await activityApi.recentAudit(500);
-
-      return entries
-        .filter((l) => !filters.entityType || l.entity_type === filters.entityType)
-        .filter((l) => !filters.action || l.action === filters.action)
-        .filter((l) => !filters.dateFrom || l.created_at >= filters.dateFrom)
-        .filter((l) => !filters.dateTo || l.created_at <= filters.dateTo + "T23:59:59")
-        .filter(
-          (l) =>
-            !filters.search ||
-            (l.entity_id ?? "").toLowerCase().includes(filters.search.toLowerCase())
-        )
-        .map((l) => ({ ...l, actor_email: l.actor_name })) as unknown as AuditLog[];
-    },
-  });
-
-  const handleExport = (format: "csv" | "json") => {
-    if (!logs) return;
-
-    const exportData = logs.map((log) => ({
-      timestamp: log.created_at,
-      entity_type: log.entity_type,
-      entity_id: log.entity_id,
-      action: log.action,
-      user_id: log.user_id,
-      ip_address: log.ip_address,
-      metadata: JSON.stringify(log.metadata),
-    }));
-
-    let content: string;
-    let mimeType: string;
-    let filename: string;
-
-    if (format === "csv") {
-      const headers = Object.keys(exportData[0] || {}).join(",");
-      const rows = exportData.map((row) => Object.values(row).join(","));
-      content = [headers, ...rows].join("\n");
-      mimeType = "text/csv";
-      filename = `audit-logs-${format}-${Date.now()}.csv`;
-    } else {
-      content = JSON.stringify(exportData, null, 2);
-      mimeType = "application/json";
-      filename = `audit-logs-${Date.now()}.json`;
-    }
-
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const getActionBadgeVariant = (action: string) => {
-    switch (action) {
-      case "approved":
-      case "posted":
-      case "paid":
-        return "default";
-      case "declined":
-      case "rejected":
-      case "deleted":
-        return "destructive";
-      case "uploaded":
-      case "processed":
-      case "exported":
-      case "bulk_imported":
-        return "secondary";
-      default:
-        return "outline";
-    }
-  };
 
   if (!isAdmin) {
     return (
@@ -153,213 +140,85 @@ export default function AuditConsole() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Shield className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold">Audit Trail</h1>
-              <p className="text-muted-foreground">
-                Who uploaded, approved, and every action taken
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => handleExport("csv")}>
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
-            <Button variant="outline" onClick={() => handleExport("json")}>
-              <Download className="h-4 w-4 mr-2" />
-              Export JSON
-            </Button>
+        <div className="flex items-center gap-3">
+          <Shield className="h-8 w-8 text-primary" />
+          <div>
+            <h1 className="text-3xl font-bold">Audit Trail</h1>
+            <p className="text-muted-foreground">
+              Select an invoice to see who uploaded it, who approved it, and every action taken
+            </p>
           </div>
         </div>
 
-        {/* Filters */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Search className="h-5 w-5" />
-              Search & Filter
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <Label>Entity Type</Label>
-                <Select
-                  value={filters.entityType || "all"}
-                  onValueChange={(v) => setFilters({ ...filters, entityType: v === "all" ? "" : v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All types</SelectItem>
-                    {ENTITY_TYPES.map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Action</Label>
-                <Select
-                  value={filters.action || "all"}
-                  onValueChange={(v) => setFilters({ ...filters, action: v === "all" ? "" : v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All actions" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All actions</SelectItem>
-                    {ACTIONS.map((action) => (
-                      <SelectItem key={action} value={action}>
-                        {action}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>From Date</Label>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  type="date"
-                  value={filters.dateFrom}
-                  onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+                  className="pl-9"
+                  placeholder="Search by invoice number or vendor…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <div>
-                <Label>To Date</Label>
-                <Input
-                  type="date"
-                  value={filters.dateTo}
-                  onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Search Entity ID</Label>
-                <Input
-                  placeholder="Search..."
-                  value={filters.search}
-                  onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                />
-              </div>
+              <Select value={status || "all"} onValueChange={(v) => setStatus(v === "all" ? "" : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
 
-        {/* Logs Table */}
         <Card>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>When</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead className="text-right">Details</TableHead>
+                  <TableHead>Invoice #</TableHead>
+                  <TableHead>Vendor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Uploaded</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
-                      Loading audit logs...
+                    <TableCell colSpan={5} className="text-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary mx-auto" />
                     </TableCell>
                   </TableRow>
-                ) : !logs || logs.length === 0 ? (
+                ) : !invoices || invoices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No audit logs found
+                    <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
+                      No invoices found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  logs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="font-mono text-sm whitespace-nowrap">
-                        {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
-                      </TableCell>
-                      <TableCell className="text-sm font-medium">
-                        {(log as any).actor_email || log.user_id || "System"}
-                      </TableCell>
+                  invoices.map((inv) => (
+                    <TableRow
+                      key={inv.id}
+                      className="cursor-pointer hover:bg-accent/50"
+                      onClick={() => setSelected(inv)}
+                    >
+                      <TableCell className="font-medium">{inv.invoice_number || "—"}</TableCell>
+                      <TableCell>{inv.vendor_name || "—"}</TableCell>
                       <TableCell>
-                        <Badge variant={getActionBadgeVariant(log.action)}>
-                          {log.action.replace(/_/g, " ")}
-                        </Badge>
-                        {(log.metadata as Record<string, unknown> | null)?.self_approved === true && (
-                          <Badge variant="destructive" className="ml-1 text-[10px]">self</Badge>
-                        )}
+                        <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{log.entity_type}</Badge>
+                      <TableCell className="text-right font-mono text-sm">
+                        {inv.currency} {inv.total_amount}
                       </TableCell>
-                      <TableCell className="font-mono text-xs max-w-[150px] truncate text-muted-foreground">
-                        {log.entity_id || "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setSelectedLog(log)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-2xl">
-                            <DialogHeader>
-                              <DialogTitle>Audit Log Details</DialogTitle>
-                            </DialogHeader>
-                            <div className="space-y-4">
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <Label className="text-muted-foreground">ID</Label>
-                                  <p className="font-mono text-sm">{log.id}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-muted-foreground">Timestamp</Label>
-                                  <p>{format(new Date(log.created_at), "PPpp")}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-muted-foreground">Entity Type</Label>
-                                  <p>{log.entity_type}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-muted-foreground">Entity ID</Label>
-                                  <p className="font-mono text-sm break-all">{log.entity_id}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-muted-foreground">Action</Label>
-                                  <p>{log.action}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-muted-foreground">User ID</Label>
-                                  <p className="font-mono text-sm">{(log as any).actor_email || log.user_id || "System"}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-muted-foreground">IP Address</Label>
-                                  <p className="font-mono">{log.ip_address || "N/A"}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-muted-foreground">User Agent</Label>
-                                  <p className="text-sm truncate">{log.user_agent || "N/A"}</p>
-                                </div>
-                              </div>
-                              <div>
-                                <Label className="text-muted-foreground">Metadata</Label>
-                                <pre className="mt-2 p-4 bg-muted rounded-lg overflow-auto max-h-[200px] text-sm">
-                                  {JSON.stringify(log.metadata, null, 2) || "{}"}
-                                </pre>
-                              </div>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {inv.created_at ? format(new Date(inv.created_at), "yyyy-MM-dd HH:mm") : "—"}
                       </TableCell>
                     </TableRow>
                   ))
@@ -369,6 +228,8 @@ export default function AuditConsole() {
           </CardContent>
         </Card>
       </div>
+
+      {selected && <InvoiceHistory invoice={selected} onClose={() => setSelected(null)} />}
     </Layout>
   );
 }
