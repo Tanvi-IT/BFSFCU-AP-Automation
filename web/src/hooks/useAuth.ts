@@ -1,15 +1,25 @@
 /**
  * Authentication — local email/password with a session cookie.
  *
- * Replaced Entra/MSAL. The public shape is kept close to the old hook so pages
- * keep compiling. Two roles: admin and user.
+ * State is shared through a context provider so that a login updates every
+ * consumer at once. (An earlier version used per-hook useState, which meant the
+ * login page's state did not reach AuthGate/Layout, so the first render after
+ * login was blank until a reload re-fetched /me everywhere.)
  *
- * The seam for SSO later lives on the server (`shared/auth.ts`); this hook only
- * cares that `/me` returns a user with a role, however that identity was proven.
+ * Two roles: admin and user. The seam for SSO later lives on the server
+ * (shared/auth.ts); this hook only cares that /me returns a user with a role.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { authApi, ApiError, type SessionUser } from "@/lib/api";
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useState,
+  createElement,
+  type ReactNode,
+} from "react";
+import { authApi, type SessionUser } from "@/lib/api";
 
 export interface CurrentUser {
   id: string;
@@ -19,26 +29,36 @@ export interface CurrentUser {
   isActive: boolean;
 }
 
-export const useAuth = () => {
+interface AuthContextValue {
+  user: CurrentUser | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<SessionUser>;
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadSession = useCallback(async () => {
-    try {
-      const me = await authApi.me();
-      setUser(me as SessionUser);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await authApi.me();
+        if (!cancelled) setUser(me as SessionUser);
+      } catch {
+        if (!cancelled) setUser(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
-    void loadSession();
-  }, [loadSession]);
-
-  /** Sign in with email + password. Throws ApiError on bad credentials. */
   const signIn = useCallback(async (email: string, password: string) => {
     const me = await authApi.login(email, password);
     setUser(me as SessionUser);
@@ -49,10 +69,20 @@ export const useAuth = () => {
     try {
       await authApi.logout();
     } catch {
-      // Even if the call fails, drop the local session.
+      // Drop the local session even if the call fails.
     }
     setUser(null);
   }, []);
+
+  return createElement(AuthContext.Provider, { value: { user, loading, signIn, signOut } }, children);
+}
+
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  const { user, loading, signIn, signOut } = ctx;
 
   const role = user?.role;
   const isAdmin = role === "admin";
@@ -78,8 +108,7 @@ export const useAuth = () => {
     /**
      * @deprecated Retained for compile compatibility with pages that guard on
      * these. Superadmin no longer exists; admin is the top role. tenantId is a
-     * single-tenant no-op — see the server-side note. Remove call sites over
-     * time.
+     * single-tenant no-op. Remove call sites over time.
      */
     isSuperAdmin: isAdmin,
     hasNoRoles: false,
