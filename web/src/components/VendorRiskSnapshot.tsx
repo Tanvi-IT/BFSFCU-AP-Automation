@@ -194,16 +194,6 @@ export function VendorRiskSnapshot({ vendorId, vendorName }: VendorRiskSnapshotP
             </p>
           </div>
         )}
-
-        {/* Link to Risk Center */}
-        <div className="pt-2">
-          <Button variant="outline" size="sm" className="w-full" asChild>
-            <Link to="/intelligence/vendor-risk">
-              <TrendingUp className="h-4 w-4 mr-2" />
-              View Vendor Risk Center
-            </Link>
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );

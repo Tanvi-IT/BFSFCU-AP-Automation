@@ -13,9 +13,7 @@ import './functions/http/workflow';
 import './functions/http/vendors';
 import './functions/http/users';
 import './functions/http/departments';
-import './functions/http/admin';
 import './functions/http/exports';
-import './functions/http/settings';
 import './functions/http/erp';
 
 // --- Queue workers ---------------------------------------------------------

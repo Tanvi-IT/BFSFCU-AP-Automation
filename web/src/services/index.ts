@@ -134,18 +134,6 @@ export const departmentsApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Admin
-// ---------------------------------------------------------------------------
-export const adminApi = {
-  /** Clear demo data. Destructive; admin only. */
-  demoReset: () =>
-    api.post<{ success: boolean; invoices: number; vendors: number }>(
-      "/maintenance/demo-reset",
-      { confirm: "DELETE" }
-    ),
-};
-
-// ---------------------------------------------------------------------------
 // Users (admin)
 // ---------------------------------------------------------------------------
 export type AppRole = "admin" | "user";
