@@ -20,8 +20,9 @@ SaaS product. **Both ancestries leave traces**, and most surprises in this
 codebase come from one of them. When something looks nonsensical, ask whether it
 made sense in a multi-tenant SaaS, or under Supabase.
 
-Stack: Azure Functions (TypeScript) + React/Vite + PostgreSQL + Entra ID +
-Blob/Queue Storage + Document Intelligence + Azure OpenAI.
+Stack: Azure Functions (TypeScript) + React/Vite + PostgreSQL + local
+password auth (session cookie) + Blob/Queue Storage + Document Intelligence +
+Azure OpenAI.
 
 ---
 
@@ -32,13 +33,14 @@ A handler that builds its own database client, parses its own auth header, or
 sets its own CORS header is a bug. Removing that duplication was the point of
 the rebuild. Routes are thin; logic lives in `shared/repository`.
 
-**2. Never render a role name raw.**
-Roles are stored `pp-` prefixed. Use `roleLabel()` from `web/src/lib/roles.ts`.
+**2. Two roles: `admin` and `user`.**
+admin can do everything (user management, vendor upload, audit); user does all
+invoice work including approve. `roleLabel()` in `web/src/lib/roles.ts` maps to
+display labels. (Auth is local email/password — NOT Entra. See the auth section.)
 
-**3. Users are keyed on `entra_oid`, never email.**
-`email` is display metadata, overwritten from the token on every sign-in. A row
-with the right email and a wrong object id looks perfectly correct and 403s on
-every request.
+**3. Users log in by email; identity is the session token's `sub` (= users.id).**
+`auth_provider` and `external_id` on the users table are the seam for adding SSO
+later without another rewrite.
 
 **4. One `app.http()` registration per route.**
 Azure Functions permits exactly one. Methods sharing a path use
@@ -76,7 +78,8 @@ api/src/
 
 web/src/
   App.tsx                   all routes
-  authConfig.ts             MSAL configuration
+  hooks/useAuth.ts          AuthProvider context (login/logout, role) + authApi
+  pages/Auth.tsx            email/password login form
   lib/api.ts                the only way the browser reaches the backend
   lib/roles.ts              role -> display label
   hooks/useAuth.ts          identity, roles, the tenantId stub
@@ -107,13 +110,14 @@ validated|submitted|exception -> approved | declined
 Only `validated`, `submitted` and `exception` are approvable (`REVIEWABLE` in
 `repository/workflow.ts`).
 
-**Roles** (`app_role` enum), least to most privileged:
-`pp-read_only`, `pp-ap_analyst`, `pp-approver`, `pp-admin`, `pp-superadmin`.
+**Roles** (`app_role` enum): `admin` and `user`. admin does everything; user
+does all invoice work including approve.
 
-**Segregation of duties.** A submitter cannot approve their own invoice.
-Enforced in both `approve()` and `approveMany()`, inside the transaction, on
-`submitted_by` — not role, so `pp-superadmin` does **not** bypass it. This is a
-financial control. Do not weaken it.
+**Approval / segregation of duties.** By product decision, any user may approve
+any invoice, **including their own** — self-approval is NOT blocked. Instead the
+audit trail records the approver and flags `self_approved: true` (in both
+`approve()` and `approveMany()`). If a future requirement reinstates maker-checker
+separation, that flag/logic is where it goes.
 
 ---
 
@@ -147,18 +151,18 @@ resolves `localhost` to `::1` first. **Use `127.0.0.1`** in `PG_HOST` and in the
 Vite proxy target. Symptom: `ECONNREFUSED ::1:5432`, or a 502 from the proxy
 that looks exactly like an auth failure.
 
-### Entra
+### Auth (local password + session cookie)
 
-- **`requestedAccessTokenVersion` must be `2`** on the API registration, nested
-  under `api` in the manifest. It defaults to null (v1), whose issuer is
-  `sts.windows.net` and never matches.
-- **`ENTRA_AUDIENCE` is the bare client id**, not `api://<client-id>`. v2 tokens
-  carry the client id in `aud`.
-- **Redirect URIs go under Single-page application**, not Web. A Web URI passes
-  the authorize request then fails token redemption with `AADSTS9002326`.
-- **MSAL caches tokens in `sessionStorage`.** After changing an app
-  registration, clear it or close the tab, or the old token keeps being replayed
-  until expiry.
+- **`useAuth` must be context, not per-hook state.** It is an `AuthProvider`
+  (wrapping the app in `main.tsx`). If you refactor it back to local `useState`,
+  login/logout will update only the calling component and everyone else stays
+  stale — the symptom is a **blank screen right after login** that a reload fixes.
+- **`SESSION_SECRET`** signs the HS256 session token. Set `AUTH_COOKIE_INSECURE=true`
+  for local HTTP (so the cookie is not marked Secure); omit it in Azure.
+- The cookie is httpOnly SameSite=Lax, same-origin via the `/api` proxy — the
+  browser never handles the token.
+- **Entra/MSAL is gone.** `auth_provider`/`external_id` on the users table are the
+  seam to add SSO later. Default login: `admin@peapod.com` / `Invoice@approve`.
 
 ### Azure
 
@@ -171,17 +175,18 @@ that looks exactly like an auth failure.
 
 ### Leftovers from the fork
 
-**`tenantId` is a stub returning the nil UUID.** This build is single-tenant,
-but **21 guards across 15 pages** still gate data loads on
-`if (!tenantId) return;`. Those guards
-bail before fetching **and before clearing the loading flag**, so the page spins
-forever. The stub returns a non-empty value purely so they pass. Removing the
-guards and the stub together is outstanding work. **Do not "fix" the stub by
-returning undefined.**
+**`tenantId` is a stub returning the nil UUID.** This build is single-tenant, but
+some surviving pages still gate data loads on `if (!tenantId) return;`. Those
+guards bail before fetching **and before clearing the loading flag**, so the page
+spins forever. The stub returns a non-empty value purely so they pass. **Do not
+"fix" the stub by returning undefined.** (Many pages that had this guard were
+deleted in the sidebar cleanup, so far fewer remain than before.)
 
-**Entra App Roles are parsed and discarded.** `principal.tokenRoles` is
-populated in `auth.ts` and never read. Authorization comes from `users.role` in
-Postgres. Creating `pp-admin` as a directory group grants nothing.
+**The sidebar and its pages were heavily trimmed.** Only Dashboard, the
+processing queues, and Administration (Upload Invoices, Vendors, Export History,
+User Management, Audit) remain. The ERP-admin / settings / intelligence / AI
+pages and their backend endpoints (settings.ts, admin.ts, most of erp.ts) were
+deleted. Their DB tables were left in place. Don't be surprised the code is gone.
 
 **Some pages were bulk-scripted during the port** — roughly 18 settings and ERP
 pages. Four had their Supabase query builder stripped to `let query: any = null`
