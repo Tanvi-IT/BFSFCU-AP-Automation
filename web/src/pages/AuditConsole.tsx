@@ -57,10 +57,14 @@ function actionVariant(action: string): "default" | "secondary" | "destructive" 
 
 /** The per-invoice history dialog. */
 function InvoiceHistory({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
-  const { data: entries, isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["invoice-audit", invoice.id],
     queryFn: () => activityApi.audit(invoice.id),
   });
+
+  // Only what a user did — skip system events (extraction, auto-routing) that
+  // have no actor.
+  const entries = data?.filter((e) => e.user_id);
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -81,7 +85,7 @@ function InvoiceHistory({ invoice, onClose }: { invoice: Invoice; onClose: () =>
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         ) : !entries || entries.length === 0 ? (
-          <p className="py-8 text-center text-muted-foreground">No recorded activity for this invoice.</p>
+          <p className="py-8 text-center text-muted-foreground">No user actions recorded for this invoice.</p>
         ) : (
           <ol className="relative border-l border-border ml-2 space-y-5 py-2">
             {entries.map((e) => (
@@ -92,7 +96,7 @@ function InvoiceHistory({ invoice, onClose }: { invoice: Invoice; onClose: () =>
                   {(e.metadata as Record<string, unknown> | null)?.self_approved === true && (
                     <Badge variant="destructive" className="text-[10px]">self-approved</Badge>
                   )}
-                  <span className="text-sm font-medium">{e.actor_name || "System"}</span>
+                  <span className="text-sm font-medium">{e.actor_name || "Unknown user"}</span>
                   <span className="text-xs text-muted-foreground">
                     {format(new Date(e.created_at), "PPp")}
                   </span>
