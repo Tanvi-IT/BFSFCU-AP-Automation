@@ -74,7 +74,7 @@ export async function listAudit(
   entityId: string
 ): Promise<AuditRow[]> {
   return query<AuditRow>(
-    `SELECT a.*, u.full_name AS actor_name
+    `SELECT a.*, COALESCE(u.full_name, u.email) AS actor_name
        FROM audit_logs a
        LEFT JOIN users u ON u.id = a.user_id
       WHERE a.entity_type = $1 AND a.entity_id = $2
@@ -85,7 +85,7 @@ export async function listAudit(
 
 export async function listRecentAudit(limit: number): Promise<AuditRow[]> {
   return query<AuditRow>(
-    `SELECT a.*, u.full_name AS actor_name
+    `SELECT a.*, COALESCE(u.full_name, u.email) AS actor_name
        FROM audit_logs a
        LEFT JOIN users u ON u.id = a.user_id
       ORDER BY a.created_at DESC

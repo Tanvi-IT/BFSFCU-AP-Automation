@@ -47,8 +47,8 @@ interface AuditLog {
   actor_email?: string | null;
 }
 
-const ENTITY_TYPES = ["invoice", "vendor", "user", "erp_settings", "export", "reconciliation", "auth"];
-const ACTIONS = ["created", "updated", "deleted", "approved", "rejected", "exported", "posted", "paid", "login", "logout", "config_changed"];
+const ENTITY_TYPES = ["invoice", "vendor", "user", "settings", "export"];
+const ACTIONS = ["uploaded", "processed", "approved", "declined", "updated", "status_changed", "note_added", "bulk_imported", "user_created", "user_updated", "exported"];
 
 export default function AuditConsole() {
   const { isAdmin } = useAuth();
@@ -126,23 +126,25 @@ export default function AuditConsole() {
       case "posted":
       case "paid":
         return "default";
+      case "declined":
       case "rejected":
       case "deleted":
         return "destructive";
-      case "created":
+      case "uploaded":
+      case "processed":
       case "exported":
+      case "bulk_imported":
         return "secondary";
       default:
         return "outline";
     }
   };
 
-  // Superadmin, Admin, and Checker can access
   if (!isAdmin) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Access denied. Admin or Checker privileges required.</p>
+          <p className="text-muted-foreground">Access denied. Admin privileges required.</p>
         </div>
       </Layout>
     );
@@ -155,9 +157,9 @@ export default function AuditConsole() {
           <div className="flex items-center gap-3">
             <Shield className="h-8 w-8 text-primary" />
             <div>
-              <h1 className="text-3xl font-bold">Audit Console</h1>
+              <h1 className="text-3xl font-bold">Audit Trail</h1>
               <p className="text-muted-foreground">
-                Immutable audit trail for SOC 2 compliance
+                Who uploaded, approved, and every action taken
               </p>
             </div>
           </div>
@@ -255,50 +257,49 @@ export default function AuditConsole() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead>Entity Type</TableHead>
-                  <TableHead>Entity ID</TableHead>
+                  <TableHead>When</TableHead>
+                  <TableHead>User</TableHead>
                   <TableHead>Action</TableHead>
-                  <TableHead>User ID</TableHead>
-                  <TableHead>IP Address</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Reference</TableHead>
                   <TableHead className="text-right">Details</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={6} className="text-center py-8">
                       Loading audit logs...
                     </TableCell>
                   </TableRow>
                 ) : !logs || logs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       No audit logs found
                     </TableCell>
                   </TableRow>
                 ) : (
                   logs.map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="font-mono text-sm whitespace-nowrap">
                         {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
+                      </TableCell>
+                      <TableCell className="text-sm font-medium">
+                        {(log as any).actor_email || log.user_id || "System"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getActionBadgeVariant(log.action)}>
+                          {log.action.replace(/_/g, " ")}
+                        </Badge>
+                        {(log.metadata as Record<string, unknown> | null)?.self_approved === true && (
+                          <Badge variant="destructive" className="ml-1 text-[10px]">self</Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{log.entity_type}</Badge>
                       </TableCell>
-                      <TableCell className="font-mono text-sm max-w-[150px] truncate">
-                        {log.entity_id}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getActionBadgeVariant(log.action)}>
-                          {log.action}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm max-w-[100px] truncate">
-                        {(log as any).actor_email || log.user_id || "-"}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {log.ip_address || "-"}
+                      <TableCell className="font-mono text-xs max-w-[150px] truncate text-muted-foreground">
+                        {log.entity_id || "-"}
                       </TableCell>
                       <TableCell className="text-right">
                         <Dialog>

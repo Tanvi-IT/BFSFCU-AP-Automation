@@ -23,6 +23,7 @@ import { AppError } from '../../shared/errors';
 import { buildBlobPath, uploadBlob, getReadUrl } from '../../shared/blob';
 import { enqueueInvoiceJob } from '../../shared/queue';
 import * as invoices from '../../shared/repository/invoices';
+import { recordAudit } from '../../shared/repository/activity';
 import { updateInvoiceRoute, deleteInvoiceRoute } from './workflow';
 import { createHash, randomUUID } from 'node:crypto';
 
@@ -124,6 +125,15 @@ app.http('invoices', {
         }
 
         await enqueueInvoiceJob({ invoiceId: id, blobPath, fileHash, source: 'manual_upload' });
+
+        // Record who uploaded, so it appears in the audit trail.
+        await recordAudit({
+          entityType: 'invoice',
+          entityId: id,
+          action: 'uploaded',
+          userId: user.id,
+          metadata: { filename, bytes: bytes.length },
+        });
 
         log.info('Invoice queued', { invoiceId: id, bytes: bytes.length });
 
