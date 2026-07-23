@@ -2,18 +2,40 @@
  * Vendor routes.
  *
  *   GET   /api/vendors            list (filter by status / search)
+ *   POST  /api/vendors/import     admin — bulk upload a vendor list (CSV/XLSX)
  *   GET   /api/vendors/{id}
  *   PATCH /api/vendors/{id}       edit details
  *   POST  /api/vendors/{id}/status   approve / block a vendor
  */
 
 import { app } from '@azure/functions';
+import * as XLSX from 'xlsx';
 import { createHandler, createMethodHandler, ok } from '../../shared/handler';
 import { Roles } from '../../shared/authorize';
 import { AppError } from '../../shared/errors';
 import * as vendors from '../../shared/repository/vendors';
 
 const VALID_STATUS = new Set(['pending_verification', 'active', 'blocked']);
+
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5 MB
+
+/** Map a spreadsheet header to a vendor field. Tolerant of spacing/case. */
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+const HEADER_MAP: Record<string, keyof vendors.VendorImportRow> = {
+  name: 'name',
+  vendorname: 'name',
+  taxid: 'taxId',
+  ein: 'taxId',
+  emaildomain: 'emailDomain',
+  domain: 'emailDomain',
+  bankaccount: 'bankAccount',
+  account: 'bankAccount',
+  externalid: 'externalId',
+  status: 'status',
+};
 
 app.http('vendors-list', {
   methods: ['GET', 'OPTIONS'],
@@ -36,6 +58,97 @@ app.http('vendors-list', {
     });
 
     return ok({ vendors: rows });
+  }),
+});
+
+// --------------------------------------------------------------------------
+// POST /api/vendors/import  — admin only. Upload a CSV/XLSX vendor list.
+//
+// Registered before vendors/{id} so "import" is not captured as an id.
+// --------------------------------------------------------------------------
+app.http('vendors-import', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'vendors/import',
+  handler: createHandler({ roles: Roles.admin }, async ({ req, user, log }) => {
+    const form = await req.formData().catch(() => {
+      throw AppError.validation('Expected a multipart/form-data file upload');
+    });
+
+    const file = form.get('file');
+    if (!file || typeof file === 'string') {
+      throw AppError.validation('No file was included in the upload');
+    }
+
+    const bytes = Buffer.from(await file.arrayBuffer());
+    if (bytes.length === 0) throw AppError.validation('The uploaded file is empty');
+    if (bytes.length > MAX_IMPORT_BYTES) {
+      throw AppError.validation('File exceeds the 5 MB limit');
+    }
+
+    // xlsx reads both .csv and .xlsx.
+    let sheetRows: Record<string, unknown>[];
+    try {
+      const wb = XLSX.read(bytes, { type: 'buffer' });
+      const first = wb.SheetNames[0];
+      const sheet = first ? wb.Sheets[first] : undefined;
+      if (!sheet) throw new Error('no sheet');
+      sheetRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        raw: false,
+        defval: null,
+      });
+    } catch {
+      throw AppError.validation('Could not read the file. Upload a CSV or XLSX.');
+    }
+
+    const parsed: vendors.VendorImportRow[] = [];
+    const errors: string[] = [];
+
+    sheetRows.forEach((raw, i) => {
+      const row: Partial<Record<keyof vendors.VendorImportRow, string>> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        const field = HEADER_MAP[normalizeHeader(key)];
+        if (field && value != null && String(value).trim() !== '') {
+          row[field] = String(value).trim();
+        }
+      }
+
+      if (!row.name) {
+        errors.push(`Row ${i + 2}: missing vendor name`);
+        return;
+      }
+      if (row.status && !VALID_STATUS.has(row.status)) {
+        errors.push(`Row ${i + 2}: invalid status "${row.status}"`);
+        return;
+      }
+
+      parsed.push({
+        name: row.name,
+        taxId: row.taxId ?? null,
+        emailDomain: row.emailDomain ?? null,
+        bankAccount: row.bankAccount ?? null,
+        externalId: row.externalId ?? null,
+        ...(row.status ? { status: row.status as vendors.VendorStatus } : {}),
+      });
+    });
+
+    if (parsed.length === 0) {
+      throw AppError.validation(
+        errors.length
+          ? `No valid rows. First issues: ${errors.slice(0, 3).join('; ')}`
+          : 'No rows found. Expected a header row with at least a "name" column.'
+      );
+    }
+
+    const result = await vendors.importMany(parsed, user.id);
+    log.info('Vendor list imported', { ...result, skipped: errors.length });
+
+    return ok({
+      inserted: result.inserted,
+      updated: result.updated,
+      skipped: errors.length,
+      errors: errors.slice(0, 20),
+    });
   }),
 });
 

@@ -80,7 +80,7 @@ interface ContractData {
 export default function VendorDetail() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
-  const { userRole, isAdmin, isSuperAdmin, user, tenantId } = useAuth();
+  const { isAdmin, user, tenantId } = useAuth();
 
   const [vendor, setVendor] = useState<VendorData | null>(null);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
@@ -92,9 +92,9 @@ export default function VendorDetail() {
   const [isVendorEditing, setIsVendorEditing] = useState(false);
   const [vendorEditForm, setVendorEditForm] = useState({ name: "", tax_id: "", bank_account: "", ach_routing_number: "", ach_account_number: "" });
 
-  const canEnrich = userRole === "pp-admin" || userRole === "pp-superadmin";
-  const canUpload = userRole === "pp-admin" || userRole === "pp-superadmin";
-  const canApproveVendor = isAdmin || isSuperAdmin;
+  const canEnrich = isAdmin;
+  const canUpload = isAdmin;
+  const canApproveVendor = isAdmin;
 
   useEffect(() => {
     if (id) {

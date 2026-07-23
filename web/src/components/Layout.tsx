@@ -15,7 +15,7 @@ interface LayoutProps {
 }
 
 export const Layout = ({ children }: LayoutProps) => {
-  const { signOut, user, isSuperAdmin, isMaker, isChecker, userRole, tenantId, tenantResolved } = useAuth();
+  const { signOut, user, isAdmin, userRole } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -24,17 +24,6 @@ export const Layout = ({ children }: LayoutProps) => {
     location.pathname !== "/" &&
     !location.pathname.match(/^\/poc\/(low-confidence|high-confidence|exceptions)\/[^/]+$/);
 
-  // Block rendering until tenant is resolved to prevent sidebar flicker
-  if (!tenantResolved) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <span className="text-sm text-muted-foreground">Loading...</span>
-        </div>
-      </div>
-    );
-  }
   const handleSignOut = async () => {
     try {
       // MSAL redirects to Entra to end the session, so nothing after this runs
@@ -50,24 +39,16 @@ export const Layout = ({ children }: LayoutProps) => {
   };
 
   const getRoleBadge = () => {
-    if (isSuperAdmin) {
+    if (!userRole) return null;
+    if (isAdmin) {
       return (
         <div className="flex items-center gap-2 rounded-md bg-white/10 px-3 py-1">
           <Shield className="h-4 w-4 text-white" />
-          <span className="text-sm font-medium text-white">Superadmin</span>
+          <span className="text-sm font-medium text-white">Admin</span>
         </div>
       );
     }
-    // Show the actual role. `isMaker` was checked first here, but it is true
-    // for admins too (isMaker = ap_analyst || isAdmin), so every admin was
-    // mislabelled "AP Origination".
-    //
-    // roleLabel strips the "pp-" storage prefix, so the badge reads exactly as
-    // it did before roles were renamed for Entra.
-    if (userRole) {
-      return <Badge className="bg-white/20 text-white border-white/30">{roleLabel(userRole)}</Badge>;
-    }
-    return null;
+    return <Badge className="bg-white/20 text-white border-white/30">{roleLabel(userRole)}</Badge>;
   };
 
   return (

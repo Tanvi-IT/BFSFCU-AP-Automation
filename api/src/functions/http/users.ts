@@ -1,33 +1,36 @@
 /**
- * User administration.
+ * User administration (admin only).
  *
  *   GET   /api/users            list
- *   POST  /api/users            provision an Entra user into this application
- *   PATCH /api/users/{id}       change role / activate / deactivate
+ *   POST  /api/users            create a local user (email, password, role)
+ *   PATCH /api/users/{id}       change role / active, or reset password
  *
- * Note what is NOT here: no password handling, no invitation email, no signup.
- * Entra owns identity. This only grants an existing Entra user access to this
- * application and assigns their role — which is why the old unauthenticated
- * `setup-admin-user` endpoint no longer needs to exist.
+ * Users are created by an administrator — there is no self-signup. Passwords
+ * are hashed with scrypt (shared/password.ts) and never stored or returned in
+ * plaintext.
  */
 
 import { app } from '@azure/functions';
 import { createHandler, createMethodHandler, ok } from '../../shared/handler';
 import { Roles } from '../../shared/authorize';
 import { AppError } from '../../shared/errors';
-import { isAppRole, type AppRole } from '../../shared/auth';
+import { isAppRole } from '../../shared/auth';
 import { query, queryOne } from '../../shared/db';
+import { hashPassword } from '../../shared/password';
+import { createLocalUser, setPassword } from '../../shared/repository/users';
 import { recordAudit } from '../../shared/repository/activity';
 
 interface UserRow {
   id: string;
-  entra_oid: string;
   email: string | null;
   full_name: string | null;
-  role: AppRole;
+  role: string;
   is_active: boolean;
+  auth_provider: string;
   created_at: string;
 }
+
+const MIN_PASSWORD = 8;
 
 app.http('users', {
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -38,7 +41,7 @@ app.http('users', {
       roles: Roles.admin,
       handler: async () => {
         const users = await query<UserRow>(
-          `SELECT id, entra_oid, email, full_name, role, is_active, created_at
+          `SELECT id, email, full_name, role, is_active, auth_provider, created_at
              FROM users
             ORDER BY full_name NULLS LAST, email`
         );
@@ -50,49 +53,44 @@ app.http('users', {
       handler: async ({ req, user, log }) => {
         const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-        const entraOid = typeof body['entraOid'] === 'string' ? body['entraOid'].trim() : '';
+        const email = typeof body['email'] === 'string' ? body['email'].trim() : '';
+        const password = typeof body['password'] === 'string' ? body['password'] : '';
         const role = typeof body['role'] === 'string' ? body['role'] : '';
+        const fullName = typeof body['fullName'] === 'string' ? body['fullName'].trim() : '';
 
-        if (!entraOid) {
-          throw AppError.validation(
-            'entraOid is required — find it in the Entra portal on the user profile'
-          );
+        if (!email || !/.+@.+\..+/.test(email)) {
+          throw AppError.validation('A valid email is required');
+        }
+        if (password.length < MIN_PASSWORD) {
+          throw AppError.validation(`Password must be at least ${MIN_PASSWORD} characters`);
         }
         if (!isAppRole(role)) {
-          throw AppError.validation('A valid role is required');
-        }
-        // Only a superadmin may mint another superadmin.
-        if (role === 'pp-superadmin' && user.role !== 'pp-superadmin') {
-          throw AppError.forbidden('Only a superadmin can grant the superadmin role');
+          throw AppError.validation("Role must be 'admin' or 'user'");
         }
 
-        const created = await queryOne<UserRow>(
-          `INSERT INTO users (entra_oid, email, full_name, role)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (entra_oid) DO NOTHING
-           RETURNING id, entra_oid, email, full_name, role, is_active, created_at`,
-          [
-            entraOid,
-            typeof body['email'] === 'string' ? body['email'] : null,
-            typeof body['fullName'] === 'string' ? body['fullName'] : null,
-            role,
-          ]
-        );
-
-        if (!created) {
-          throw AppError.conflict('That Entra user already has access to this application');
-        }
+        const created = await createLocalUser({
+          email,
+          fullName: fullName || null,
+          role,
+          passwordHash: await hashPassword(password),
+        });
 
         await recordAudit({
           entityType: 'user',
           entityId: created.id,
-          action: 'user_provisioned',
+          action: 'user_created',
           userId: user.id,
-          metadata: { role },
+          metadata: { role, email },
         });
 
-        log.info('User provisioned', { userId: created.id, role });
-        return ok(created);
+        log.info('User created', { userId: created.id, role });
+        return ok({
+          id: created.id,
+          email: created.email,
+          fullName: created.fullName,
+          role: created.role,
+          isActive: created.isActive,
+        });
       },
     },
   }),
@@ -109,16 +107,21 @@ app.http('users-update', {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const role = typeof body['role'] === 'string' ? body['role'] : undefined;
     const isActive = typeof body['isActive'] === 'boolean' ? body['isActive'] : undefined;
+    const password = typeof body['password'] === 'string' ? body['password'] : undefined;
 
     if (role !== undefined && !isAppRole(role)) {
-      throw AppError.validation('Invalid role');
+      throw AppError.validation("Role must be 'admin' or 'user'");
     }
-    if (role === 'pp-superadmin' && user.role !== 'pp-superadmin') {
-      throw AppError.forbidden('Only a superadmin can grant the superadmin role');
+    if (password !== undefined && password.length < MIN_PASSWORD) {
+      throw AppError.validation(`Password must be at least ${MIN_PASSWORD} characters`);
     }
-    // Guard against an admin locking themselves out.
+    // Guard against an admin locking themselves out or self-demoting the last time.
     if (id === user.id && isActive === false) {
       throw AppError.validation('You cannot deactivate your own account');
+    }
+
+    if (password !== undefined) {
+      await setPassword(id, await hashPassword(password));
     }
 
     const updated = await queryOne<UserRow>(
@@ -126,7 +129,7 @@ app.http('users-update', {
           SET role      = COALESCE($2, role),
               is_active = COALESCE($3, is_active)
         WHERE id = $1
-        RETURNING id, entra_oid, email, full_name, role, is_active, created_at`,
+        RETURNING id, email, full_name, role, is_active, auth_provider, created_at`,
       [id, role ?? null, isActive ?? null]
     );
 
@@ -137,7 +140,7 @@ app.http('users-update', {
       entityId: id,
       action: 'user_updated',
       userId: user.id,
-      metadata: { role, isActive },
+      metadata: { role, isActive, passwordReset: password !== undefined },
     });
 
     log.info('User updated', { userId: id, role, isActive });

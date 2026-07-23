@@ -65,6 +65,16 @@ export const vendorsApi = {
       `/vendors/${id}/apply-coding`,
       coding
     ),
+
+  /** Admin: bulk upload a vendor list (CSV or XLSX). */
+  import: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.upload<{ inserted: number; updated: number; skipped: number; errors: string[] }>(
+      "/vendors/import",
+      form
+    );
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -138,26 +148,26 @@ export const adminApi = {
 // ---------------------------------------------------------------------------
 // Users (admin)
 // ---------------------------------------------------------------------------
-export type AppRole = "pp-superadmin" | "pp-admin" | "pp-ap_analyst" | "pp-approver" | "pp-read_only";
+export type AppRole = "admin" | "user";
 
 export interface ManagedUser {
   id: string;
-  entra_oid: string;
   email: string | null;
   full_name: string | null;
   role: AppRole;
   is_active: boolean;
+  auth_provider?: string;
   created_at: string;
 }
 
 export const usersApi = {
   list: () => api.get<{ users: ManagedUser[] }>("/users").then((r) => r.users),
 
-  /** Grant an existing Entra user access to this application. */
-  create: (input: { entraOid: string; role: AppRole; email?: string; fullName?: string }) =>
+  /** Create a local user with an initial password. */
+  create: (input: { email: string; password: string; role: AppRole; fullName?: string }) =>
     api.post<ManagedUser>("/users", input),
 
-  update: (id: string, fields: { role?: AppRole; isActive?: boolean }) =>
+  update: (id: string, fields: { role?: AppRole; isActive?: boolean; password?: string }) =>
     api.patch<ManagedUser>(`/users/${id}`, fields),
 };
 export * from "./settings";

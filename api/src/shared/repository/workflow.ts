@@ -32,13 +32,6 @@ export async function approve(
     const invoice = found.rows[0];
     if (!invoice) throw AppError.notFound('Invoice not found');
 
-    // Segregation of duties: a submitter cannot approve their own invoice.
-    // approveMany() has always enforced this; this path did not, so the rule
-    // was bypassable one invoice at a time.
-    if (invoice.submitted_by && invoice.submitted_by === actorId) {
-      throw AppError.forbidden('You cannot approve an invoice you submitted yourself.');
-    }
-
     if (invoice.status === 'approved') {
       throw AppError.conflict('This invoice has already been approved');
     }
@@ -55,10 +48,19 @@ export async function approve(
       [invoiceId, actorId]
     );
 
+    // Any user may approve any invoice. Accountability is via the audit trail;
+    // self-approval (approver == submitter) is not blocked but is flagged so it
+    // is visible and reportable without depending on manual review.
+    const selfApproved = invoice.submitted_by != null && invoice.submitted_by === actorId;
+
     await client.query(
       `INSERT INTO audit_logs (entity_type, entity_id, action, user_id, metadata)
        VALUES ('invoice', $1, 'approved', $2, $3::jsonb)`,
-      [invoiceId, actorId, JSON.stringify({ from: invoice.status, note: note ?? null })]
+      [
+        invoiceId,
+        actorId,
+        JSON.stringify({ from: invoice.status, note: note ?? null, self_approved: selfApproved }),
+      ]
     );
   });
 }
@@ -360,18 +362,13 @@ export async function approveMany(
   if (invoiceIds.length === 0) return { approved: [], skipped: [] };
 
   return transaction(async (client) => {
-    // Segregation of duties: a submitter cannot approve their own invoice.
-    // This was previously enforced only in the browser, so it could be
-    // bypassed by calling the API directly.
+    // Which of these were submitted by the approver — flagged in the audit
+    // trail as self-approvals, not blocked (see approve()).
     const own = await client.query<{ id: string }>(
       `SELECT id FROM invoices WHERE id = ANY($1::uuid[]) AND submitted_by = $2`,
       [invoiceIds as string[], actorId]
     );
-    if (own.rows.length > 0) {
-      throw AppError.forbidden(
-        'You cannot approve an invoice you submitted yourself.'
-      );
-    }
+    const selfIds = new Set(own.rows.map((r) => r.id));
 
     const result = await client.query<{ id: string }>(
       `UPDATE invoices
@@ -390,7 +387,11 @@ export async function approveMany(
       await client.query(
         `INSERT INTO audit_logs (entity_type, entity_id, action, user_id, metadata)
          VALUES ('invoice', $1, 'approved', $2, $3::jsonb)`,
-        [id, actorId, JSON.stringify({ bulk: true, queue: 'high_confidence' })]
+        [
+          id,
+          actorId,
+          JSON.stringify({ bulk: true, queue: 'high_confidence', self_approved: selfIds.has(id) }),
+        ]
       );
     }
 

@@ -85,7 +85,7 @@ interface ExportLog {
 }
 
 export default function ERPConnectors() {
-  const { userRole, tenantId } = useAuth();
+  const { isAdmin, tenantId } = useAuth();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedErpType, setSelectedErpType] = useState<ERPType | "">("");
@@ -93,7 +93,7 @@ export default function ERPConnectors() {
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [authValues, setAuthValues] = useState<Record<string, string>>({});
 
-  const canManage = userRole === "pp-superadmin" || userRole === "pp-admin";
+  const canManage = isAdmin;
 
   // Fetch connectors
   const { data: connectors, isLoading: loadingConnectors } = useQuery({
@@ -197,7 +197,7 @@ export default function ERPConnectors() {
   };
 
   // Access control
-  if (userRole !== "pp-superadmin" && userRole !== "pp-admin" && userRole !== "checker") {
+  if (!isAdmin) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

@@ -6,7 +6,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { vendorsApi } from "@/services";
 import { invoicesApi } from "@/services/invoices";
-import { Loader2, Building2, ChevronRight, Sparkles } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { useRef } from "react";
+import { Loader2, Building2, ChevronRight, Sparkles, Upload } from "lucide-react";
 
 interface VendorWithEnrichment {
   id: string;
@@ -21,10 +24,44 @@ interface VendorWithEnrichment {
 const VendorList = () => {
   const [vendors, setVendors] = useState<VendorWithEnrichment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const { isAdmin } = useAuth();
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchVendors();
   }, []);
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const result = await vendorsApi.import(file);
+      const parts = [`${result.inserted} added`, `${result.updated} updated`];
+      if (result.skipped) parts.push(`${result.skipped} skipped`);
+      toast({ title: "Vendor list imported", description: parts.join(", ") + "." });
+      if (result.errors?.length) {
+        toast({
+          variant: "destructive",
+          title: `${result.skipped} rows skipped`,
+          description: result.errors.slice(0, 3).join("; "),
+        });
+      }
+      fetchVendors();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Import failed",
+        description: (err as Error).message,
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const fetchVendors = async () => {
     try {
@@ -71,14 +108,40 @@ const VendorList = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-foreground">
-            <Building2 className="h-8 w-8" />
-            Vendors
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your vendor directory
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-foreground">
+              <Building2 className="h-8 w-8" />
+              Vendors
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Manage your vendor directory
+            </p>
+          </div>
+
+          {isAdmin && (
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
+                onChange={handleImport}
+              />
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+              >
+                {importing ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="mr-2 h-4 w-4" />
+                )}
+                Upload Vendor List
+              </Button>
+            </div>
+          )}
         </div>
 
         <Card>

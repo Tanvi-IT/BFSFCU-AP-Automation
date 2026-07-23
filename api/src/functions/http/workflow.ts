@@ -217,11 +217,6 @@ app.http('invoice-notes', {
       return ok({ notes: await activity.listNotes(id) });
     }
 
-    // Read-only users may view notes but not add them.
-    if (user.role === 'pp-read_only') {
-      throw AppError.forbidden('Read-only users cannot add notes');
-    }
-
     const body = await readJson(req);
     const text = typeof body['body'] === 'string' ? body['body'].trim() : '';
     if (!text) throw AppError.validation('Note text is required');

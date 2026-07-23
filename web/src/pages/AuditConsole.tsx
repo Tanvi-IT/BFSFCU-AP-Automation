@@ -51,7 +51,7 @@ const ENTITY_TYPES = ["invoice", "vendor", "user", "erp_settings", "export", "re
 const ACTIONS = ["created", "updated", "deleted", "approved", "rejected", "exported", "posted", "paid", "login", "logout", "config_changed"];
 
 export default function AuditConsole() {
-  const { userRole } = useAuth();
+  const { isAdmin } = useAuth();
   const [filters, setFilters] = useState({
     entityType: "",
     action: "",
@@ -138,7 +138,7 @@ export default function AuditConsole() {
   };
 
   // Superadmin, Admin, and Checker can access
-  if (userRole !== "pp-superadmin" && userRole !== "pp-admin" && userRole !== "checker") {
+  if (!isAdmin) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

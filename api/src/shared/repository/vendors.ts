@@ -55,6 +55,88 @@ export async function getById(id: string): Promise<VendorRow | undefined> {
   return queryOne<VendorRow>(`SELECT * FROM vendors WHERE id = $1`, [id]);
 }
 
+export interface VendorImportRow {
+  name: string;
+  taxId?: string | null;
+  emailDomain?: string | null;
+  bankAccount?: string | null;
+  externalId?: string | null;
+  status?: VendorStatus;
+}
+
+/**
+ * Bulk import vendors (admin upload).
+ *
+ * Matches an existing vendor on tax_id when present, otherwise on a
+ * case-insensitive name, and updates it; inserts otherwise. Runs in one
+ * transaction so a bad row does not leave a half-applied import. Marked
+ * source='upload' to distinguish from auto-created vendors.
+ */
+export async function importMany(
+  rows: readonly VendorImportRow[],
+  actorId: string
+): Promise<{ inserted: number; updated: number }> {
+  return transaction(async (client) => {
+    let inserted = 0;
+    let updated = 0;
+
+    for (const r of rows) {
+      const existing = await client.query<{ id: string }>(
+        `SELECT id FROM vendors
+          WHERE (($1::text IS NOT NULL AND tax_id = $1)
+             OR  lower(name) = lower($2))
+          LIMIT 1`,
+        [r.taxId ?? null, r.name]
+      );
+
+      if (existing.rows[0]) {
+        await client.query(
+          `UPDATE vendors
+              SET name         = $2,
+                  tax_id       = COALESCE($3, tax_id),
+                  email_domain = COALESCE($4, email_domain),
+                  bank_account = COALESCE($5, bank_account),
+                  external_id  = COALESCE($6, external_id),
+                  status       = COALESCE($7::vendor_status, status)
+            WHERE id = $1`,
+          [
+            existing.rows[0].id,
+            r.name,
+            r.taxId ?? null,
+            r.emailDomain ?? null,
+            r.bankAccount ?? null,
+            r.externalId ?? null,
+            r.status ?? null,
+          ]
+        );
+        updated++;
+      } else {
+        await client.query(
+          `INSERT INTO vendors (name, tax_id, email_domain, bank_account, external_id, status, source)
+           VALUES ($1, $2, $3, $4, $5, COALESCE($6::vendor_status, 'pending_verification'), 'upload')`,
+          [
+            r.name,
+            r.taxId ?? null,
+            r.emailDomain ?? null,
+            r.bankAccount ?? null,
+            r.externalId ?? null,
+            r.status ?? null,
+          ]
+        );
+        inserted++;
+      }
+    }
+
+    await client.query(
+      `INSERT INTO audit_logs (entity_type, entity_id, action, user_id, metadata)
+       VALUES ('vendor', NULL, 'bulk_imported', $1, $2::jsonb)`,
+      [actorId, JSON.stringify({ inserted, updated, total: rows.length })]
+    );
+
+    return { inserted, updated };
+  });
+}
+
 export async function setStatus(
   id: string,
   status: VendorStatus,

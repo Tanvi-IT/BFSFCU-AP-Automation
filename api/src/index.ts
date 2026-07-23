@@ -6,6 +6,7 @@
  */
 
 // --- HTTP routes -----------------------------------------------------------
+import './functions/http/auth';
 import './functions/http/me';
 import './functions/http/invoices';
 import './functions/http/workflow';

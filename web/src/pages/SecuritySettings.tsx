@@ -48,7 +48,7 @@ const GEO_OPTIONS = [
 ];
 
 export default function SecuritySettings() {
-  const { userRole, tenantId } = useAuth();
+  const { isAdmin, tenantId } = useAuth();
   const queryClient = useQueryClient();
   const [newIp, setNewIp] = useState("");
   const [formData, setFormData] = useState<Partial<SecuritySettings>>({
@@ -147,7 +147,7 @@ export default function SecuritySettings() {
     }
   };
 
-  if (userRole !== "pp-superadmin" && userRole !== "pp-admin" && userRole !== "checker") {
+  if (!isAdmin) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">

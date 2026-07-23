@@ -34,29 +34,26 @@ function int(name: string, fallback: number): number {
 
 export const config = {
   auth: {
-    /** Azure AD (Entra) directory id — NOT an application tenancy concept. */
-    get tenantId() {
-      return required('ENTRA_TENANT_ID');
+    /**
+     * Secret used to sign and verify session tokens (HS256).
+     *
+     * Must be a strong random value, set only on the server (never shipped to
+     * the browser), and rotated by changing this setting. In production put it
+     * in Key Vault. Local development uses a fixed development value if unset.
+     */
+    get sessionSecret() {
+      return optional('SESSION_SECRET', 'dev-only-insecure-session-secret-change-me');
     },
-    get clientId() {
-      return required('ENTRA_CLIENT_ID');
+    /** Session lifetime. Accepts values like '8h', '12h', '7d'. */
+    get sessionTtl() {
+      return optional('SESSION_TTL', '12h');
     },
     /**
-     * Expected `aud` claim. Defaults to the bare client id.
-     *
-     * v2.0 access tokens carry the client id in `aud`; only v1.0 tokens carry
-     * the `api://<clientId>` Application ID URI. This API validates against the
-     * v2 issuer and v2 key set, so the client id is the correct default — the
-     * scope the SPA requests is still `api://<clientId>/access_as_user`.
+     * Whether the session cookie is marked Secure. True in Azure (HTTPS);
+     * false locally over plain HTTP so the cookie is accepted.
      */
-    get audience() {
-      return optional('ENTRA_AUDIENCE', required('ENTRA_CLIENT_ID'));
-    },
-    get issuer() {
-      return `https://login.microsoftonline.com/${required('ENTRA_TENANT_ID')}/v2.0`;
-    },
-    get jwksUri() {
-      return `https://login.microsoftonline.com/${required('ENTRA_TENANT_ID')}/discovery/v2.0/keys`;
+    get cookieSecure() {
+      return !bool('AUTH_COOKIE_INSECURE', false);
     },
   },
 

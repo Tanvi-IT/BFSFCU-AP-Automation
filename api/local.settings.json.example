@@ -5,10 +5,11 @@
     "AZURE_FUNCTIONS_ENVIRONMENT": "Development",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
 
-    "ENTRA_TENANT_ID": "<azure-ad-tenant-guid>",
-    "ENTRA_CLIENT_ID": "<app-registration-client-id>",
-    "//ENTRA_AUDIENCE": "v2.0 tokens carry the bare client id in aud, NOT api://<client-id>",
-    "ENTRA_AUDIENCE": "<app-registration-client-id>",
+    "//SESSION_SECRET": "Strong random value used to sign session tokens. Use Key Vault in production.",
+    "SESSION_SECRET": "<a-strong-random-secret>",
+    "SESSION_TTL": "12h",
+    "//AUTH_COOKIE_INSECURE": "true only for local HTTP; omit in Azure so the cookie is Secure.",
+    "AUTH_COOKIE_INSECURE": "true",
 
     "PG_HOST": "localhost",
     "PG_PORT": "5432",

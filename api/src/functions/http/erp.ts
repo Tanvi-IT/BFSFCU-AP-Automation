@@ -39,10 +39,6 @@ app.http('erp-connectors', {
       return ok({ connectors });
     }
 
-    if (user.role === 'pp-read_only') {
-      throw AppError.forbidden('Read-only users cannot create connectors');
-    }
-
     const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const name = typeof b['name'] === 'string' ? b['name'].trim() : '';
     const erpSystem = typeof b['erp_system'] === 'string' ? b['erp_system'] : '';
@@ -89,10 +85,6 @@ app.http('erp-mappings', {
         `SELECT * FROM erp_field_mappings ORDER BY target_field`
       );
       return ok({ mappings });
-    }
-
-    if (user.role === 'pp-read_only') {
-      throw AppError.forbidden('Read-only users cannot edit mappings');
     }
 
     const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;

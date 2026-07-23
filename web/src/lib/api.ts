@@ -1,12 +1,11 @@
 /**
  * The ONLY way the frontend talks to the backend.
  *
- * Replaces direct database access. Every call goes through here, so the
- * access token is attached in one place and errors are shaped consistently.
+ * Authentication is a session cookie set by /auth/login. Requests are made
+ * same-origin (the dev server and the Static Web App both proxy /api), so the
+ * httpOnly cookie rides along automatically — the browser never handles the
+ * token, and there is nothing for this layer to attach.
  */
-
-import { msalInstance, apiRequest } from "@/authConfig";
-import { InteractionRequiredAuthError } from "@azure/msal-browser";
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
 
@@ -43,32 +42,6 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Acquire an access token silently; fall back to an interactive redirect only
- * when the user genuinely has to re-consent or re-authenticate.
- */
-async function getAccessToken(): Promise<string> {
-  const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
-  if (!account) {
-    throw new ApiError(401, "unauthorized", "Not signed in");
-  }
-
-  try {
-    const result = await msalInstance.acquireTokenSilent({
-      ...apiRequest,
-      account,
-    });
-    return result.accessToken;
-  } catch (err) {
-    if (err instanceof InteractionRequiredAuthError) {
-      await msalInstance.acquireTokenRedirect({ ...apiRequest, account });
-      // The redirect navigates away; this line is not reached.
-      throw new ApiError(401, "unauthorized", "Redirecting to sign in");
-    }
-    throw err;
-  }
-}
-
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
@@ -93,10 +66,7 @@ function buildUrl(path: string, query?: RequestOptions["query"]): string {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const token = await getAccessToken();
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
+  const headers: Record<string, string> = {};
 
   let body: BodyInit | undefined;
   if (options.formData) {
@@ -109,6 +79,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const res = await fetch(buildUrl(path, options.query), {
     method: options.method ?? "GET",
     headers,
+    credentials: "same-origin", // send the session cookie
     ...(body !== undefined ? { body } : {}),
     ...(options.signal ? { signal: options.signal } : {}),
   });
@@ -152,13 +123,26 @@ export const api = {
 
   /** Download a binary response (Excel export, PDF, …). */
   blob: async (path: string, query?: RequestOptions["query"]): Promise<Blob> => {
-    const token = await getAccessToken();
-    const res = await fetch(buildUrl(path, query), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetch(buildUrl(path, query), { credentials: "same-origin" });
     if (!res.ok) {
       throw new ApiError(res.status, "internal_error", res.statusText || "Download failed");
     }
     return res.blob();
   },
+};
+
+/** Session profile returned by /me and /auth/login. */
+export interface SessionUser {
+  id: string;
+  email: string | null;
+  fullName: string | null;
+  role: "admin" | "user";
+  isActive: boolean;
+}
+
+export const authApi = {
+  login: (email: string, password: string) =>
+    api.post<SessionUser>("/auth/login", { email, password }),
+  logout: () => api.post<{ ok: boolean }>("/auth/logout"),
+  me: () => api.get<SessionUser>("/me"),
 };
