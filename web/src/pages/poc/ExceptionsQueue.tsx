@@ -1,15 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { invoicesApi, QUEUE } from "@/services/invoices";
 import { useAuth } from "@/hooks/useAuth";
 import { getReasonLabels } from "@/lib/invoiceReasons";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertOctagon, Eye, CheckCircle2, RotateCcw, Building2 } from "lucide-react";
+import { Loader2, AlertOctagon, Eye, CheckCircle2, RotateCcw, Building2, Search } from "lucide-react";
 import { format } from "date-fns";
 import {
   Dialog,
@@ -54,6 +55,7 @@ export default function ExceptionsQueue() {
   const [actionModal, setActionModal] = useState<"resolve" | "return" | null>(null);
   const [comment, setComment] = useState("");
   const [isActioning, setIsActioning] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Checkers can view and take action on exceptions for demo purposes
   const canManage = isChecker || isAdmin || isSuperAdmin;
@@ -91,8 +93,8 @@ export default function ExceptionsQueue() {
               : null,
             bad_file_flag: flags.includes("extraction_failed"),
             bad_file_reason: inv.processing_error,
-            vendor: inv.vendor_id
-              ? { id: inv.vendor_id, name: inv.vendor_name ?? "—", status: "active", bank_verified: false }
+            vendor: inv.vendor_name
+              ? { id: inv.vendor_id ?? "", name: inv.vendor_name, status: "active", bank_verified: false }
               : null,
           };
         }) as any
@@ -175,6 +177,27 @@ export default function ExceptionsQueue() {
     return reasons;
   };
 
+  // Filtered in the browser, matching the High- and Low-Confidence queues: this
+  // is a working queue with everything already loaded, not a paged history.
+  // Reason text is searchable too — "duplicate" is how you find the duplicates.
+  const filteredInvoices = useMemo(() => {
+    if (!searchTerm.trim()) return invoices;
+    const term = searchTerm.toLowerCase();
+    return invoices.filter((inv) =>
+      [
+        inv.vendor?.name,
+        inv.invoice_number,
+        inv.currency,
+        inv.total_amount?.toString(),
+        inv.checker_comment,
+        inv.bad_file_reason,
+        ...getExceptionReasons(inv),
+      ]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(term))
+    );
+  }, [invoices, searchTerm]);
+
   if (loading) return null;
 
   if (!canManage) {
@@ -204,19 +227,31 @@ export default function ExceptionsQueue() {
           </p>
         </div>
 
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by vendor, invoice #, amount, reason..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+
         <Card>
           <CardHeader>
-            <CardTitle>Exception Invoices ({invoices.length})</CardTitle>
+            <CardTitle>Exception Invoices ({filteredInvoices.length})</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             {isLoading ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : invoices.length === 0 ? (
+            ) : filteredInvoices.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
                 <CheckCircle2 className="mx-auto h-12 w-12 text-success/50" />
-                <p className="mt-4">No exception invoices pending</p>
+                <p className="mt-4">
+                  {searchTerm ? "No matching exceptions found" : "No exception invoices pending"}
+                </p>
               </div>
             ) : (
               <Table>
@@ -231,7 +266,7 @@ export default function ExceptionsQueue() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {invoices.map((invoice) => (
+                  {filteredInvoices.map((invoice) => (
                     <TableRow key={invoice.id} className="cursor-pointer" onClick={() => navigate(`/poc/exceptions/${invoice.id}`)}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">

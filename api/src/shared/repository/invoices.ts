@@ -109,9 +109,46 @@ export async function setStatus(
   );
 }
 
+/**
+ * A processing failure sends the invoice to Low Confidence for review, not
+ * Exception — Exception is entered only by a reviewer's action. The invoice
+ * carries the error and an 'extraction_failed' flag so the review queue shows
+ * why, and a reviewer can then escalate, decline, or (if it was transient)
+ * simply approve.
+ */
+export async function markProcessingFailed(id: string, error: string): Promise<void> {
+  await query(
+    `UPDATE invoices
+        SET status = 'validated',
+            risk_level = 'high',
+            processing_error = $2,
+            variation_flags = CASE
+              WHEN 'extraction_failed' = ANY (variation_flags) THEN variation_flags
+              ELSE array_append(variation_flags, 'extraction_failed')
+            END
+      WHERE id = $1`,
+    [id, error]
+  );
+}
+
+/**
+ * Timestamps a date range may filter and sort on.
+ *
+ * This is a whitelist, and it has to be: Postgres cannot parameterise a column
+ * name, so the value is interpolated into the SQL text. Never widen this to an
+ * arbitrary caller-supplied string.
+ */
+export const DATE_FIELDS = ['created_at', 'updated_at', 'approved_at'] as const;
+export type DateField = (typeof DATE_FIELDS)[number];
+
 export interface ListFilters {
   status?: InvoiceStatus;
   search?: string;
+  /** Inclusive `YYYY-MM-DD` bounds, applied to `dateField`. */
+  dateFrom?: string;
+  dateTo?: string;
+  /** Which timestamp the range filters and orders by. Defaults to `created_at`. */
+  dateField?: DateField;
   limit: number;
   offset: number;
 }
@@ -128,19 +165,46 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
   if (filters.search) {
     params.push(`%${filters.search}%`);
     const p = `$${params.length}`;
-    where.push(`(i.invoice_number ILIKE ${p} OR v.name ILIKE ${p})`);
+    // `decline_reason` is included so the Declined queue can be searched by why
+    // an invoice was declined, which is how that history is usually recalled.
+    where.push(
+      `(i.invoice_number ILIKE ${p} OR v.name ILIKE ${p} OR i.decline_reason ILIKE ${p})`
+    );
+  }
+
+  // Re-check the whitelist here rather than trusting the caller's type: this
+  // string is concatenated into SQL.
+  const dateField: DateField =
+    filters.dateField && DATE_FIELDS.includes(filters.dateField)
+      ? filters.dateField
+      : 'created_at';
+
+  if (filters.dateFrom) {
+    params.push(filters.dateFrom);
+    where.push(`i.${dateField} >= $${params.length}::date`);
+  }
+
+  if (filters.dateTo) {
+    params.push(filters.dateTo);
+    // Half-open upper bound. `<= $n::date` would compare against midnight and
+    // silently drop every row recorded later on the end day itself.
+    where.push(`i.${dateField} < ($${params.length}::date + INTERVAL '1 day')`);
   }
 
   params.push(filters.limit, filters.offset);
 
   return query<InvoiceRow>(
     `SELECT i.*, COALESCE(i.raw_file_path, i.blob_path) AS raw_file_path,
-              v.name AS vendor_name, v.status AS vendor_status,
+              -- Fall back to the name captured when the invoice was validated:
+              -- the live vendor may have been removed by a later list upload,
+              -- which must not erase who this invoice was for.
+              COALESCE(v.name, i.vendor_name_snapshot) AS vendor_name,
+              v.status AS vendor_status,
               v.bank_verified AS vendor_bank_verified
        FROM invoices i
        LEFT JOIN vendors v ON v.id = i.vendor_id
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY i.created_at DESC
+      ORDER BY i.${dateField} DESC NULLS LAST
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
@@ -149,7 +213,11 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
 export async function getById(id: string): Promise<InvoiceRow | undefined> {
   return queryOne<InvoiceRow>(
     `SELECT i.*, COALESCE(i.raw_file_path, i.blob_path) AS raw_file_path,
-              v.name AS vendor_name, v.status AS vendor_status,
+              -- Fall back to the name captured when the invoice was validated:
+              -- the live vendor may have been removed by a later list upload,
+              -- which must not erase who this invoice was for.
+              COALESCE(v.name, i.vendor_name_snapshot) AS vendor_name,
+              v.status AS vendor_status,
               v.bank_verified AS vendor_bank_verified
        FROM invoices i
        LEFT JOIN vendors v ON v.id = i.vendor_id

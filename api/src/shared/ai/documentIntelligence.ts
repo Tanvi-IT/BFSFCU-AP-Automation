@@ -35,7 +35,10 @@ export interface ExtractedLineItem {
   lineTotal: number | null;
 }
 
-const POLL_INTERVAL_MS = 2_000;
+// First poll after 800ms, then every 800ms. Document Intelligence usually
+// finishes a single invoice in 2–4s, so a shorter interval shaves a second or
+// two off perceived latency without hammering the service.
+const POLL_INTERVAL_MS = 800;
 const POLL_TIMEOUT_MS = 120_000;
 
 interface DocIntelField {

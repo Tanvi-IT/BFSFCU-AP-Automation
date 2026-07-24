@@ -1,9 +1,15 @@
 /**
  * Queue routing — decides where a processed invoice lands.
  *
- *   exception  → duplicate, extraction problem, or a critical flag
  *   validated  → Low Confidence: a human should look at it
- *   submitted  → High Confidence: ready for approval
+ *   submitted  → High Confidence: clean, ready for approval
+ *
+ * Automatic routing never selects Exception. Exception is a user-managed queue:
+ * a reviewer escalates into it, and a reviewer resolves out of it. So anything
+ * an upload would previously have auto-flagged as an exception — a duplicate, an
+ * unknown vendor, a critical flag — now lands in Low Confidence for review, with
+ * the flag attached so the reviewer sees why. From there the reviewer can
+ * escalate to Exception, approve, or decline.
  *
  * Pure and synchronous, so the rules are easy to read and unit-test. Nothing
  * here touches the database.
@@ -15,7 +21,8 @@ export interface RoutingInput {
   confidence: number;
   flags: string[];
   duplicate: DuplicateResult;
-  isNewVendor: boolean;
+  /** The extracted vendor is not on the admin-imported vendor master. */
+  vendorUnmatched: boolean;
   vendorActive: boolean;
   hasVendorName: boolean;
 }
@@ -38,45 +45,57 @@ const CRITICAL_FLAGS = new Set([
 ]);
 
 export function routeInvoice(input: RoutingInput): RoutingResult {
-  const flags = [...input.flags];
+  // Deduplicated: stage-2 normalisation shares this flag vocabulary, so a flag
+  // it already raised must not be pushed again below and rendered twice.
+  const seen = new Set(input.flags);
 
   if (input.duplicate.type) {
-    flags.push(`duplicate_${input.duplicate.type}`);
+    seen.add(`duplicate_${input.duplicate.type}`);
   }
   if (!input.hasVendorName) {
-    flags.push('vendor_missing');
+    seen.add('vendor_missing');
   }
-  if (input.isNewVendor) {
-    flags.push('new_vendor');
+  if (input.vendorUnmatched) {
+    seen.add('vendor_not_found');
   }
 
+  const flags = [...seen];
   const hasCritical = flags.some((f) => CRITICAL_FLAGS.has(f));
 
-  // 1. A duplicate that must not proceed.
-  if (input.duplicate.blockNew) {
-    return { status: 'exception', riskLevel: 'high', flags };
+  // High-risk reasons still land in a review queue — Low Confidence — rather
+  // than being sent straight to Exception. A reviewer decides from there.
+  //   - a duplicate the system would have blocked
+  //   - a critical flag (bad file, non-invoice, bank/tax mismatch)
+  //   - a vendor that is not on the approved master list
+  if (input.duplicate.blockNew || hasCritical || input.vendorUnmatched) {
+    return { status: 'validated', riskLevel: 'high', flags };
   }
 
-  // 2. Anything critical is a human decision.
-  if (hasCritical) {
-    return { status: 'exception', riskLevel: 'high', flags };
-  }
-
-  // 3. Missing vendor name, or a brand-new/unverified vendor: review.
-  if (!input.hasVendorName || input.isNewVendor || !input.vendorActive) {
+  // A tax line on an invoice to a tax-exempt organisation is always a review
+  // reason. It forces Low Confidence regardless of how clean everything else is
+  // — an otherwise-perfect invoice with tax must never reach High Confidence.
+  if (flags.includes('tax_line_detected')) {
     return { status: 'validated', riskLevel: 'medium', flags };
   }
 
-  // 4. Low confidence: review.
-  if (input.confidence < HIGH_CONFIDENCE) {
+  // A missing total is a review reason on its own: an invoice with no amount
+  // cannot be approved for payment, so it never clears to High Confidence — even
+  // if the model reported high confidence in the rest of the record. (A missing
+  // invoice number is deliberately NOT treated this way; see TC-13.)
+  if (flags.includes('total_amount_missing')) {
+    return { status: 'validated', riskLevel: 'high', flags };
+  }
+
+  // Medium-risk reasons: missing/inactive vendor, low confidence, soft dup.
+  if (
+    !input.hasVendorName ||
+    !input.vendorActive ||
+    input.confidence < HIGH_CONFIDENCE ||
+    input.duplicate.type === 'soft'
+  ) {
     return { status: 'validated', riskLevel: 'medium', flags };
   }
 
-  // 5. A soft duplicate is worth a look even when confidence is high.
-  if (input.duplicate.type === 'soft') {
-    return { status: 'validated', riskLevel: 'medium', flags };
-  }
-
-  // 6. Clean.
+  // Clean: high confidence, active known vendor, no duplicate, no flags.
   return { status: 'submitted', riskLevel: 'low', flags };
 }

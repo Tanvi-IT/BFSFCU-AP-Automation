@@ -9,6 +9,8 @@ const FLAG_LABELS: Record<string, string> = {
   duplicate_invoice_number: "Duplicate invoice number",
   extraction_failed: "Extraction failed",
   vendor_missing: "Vendor name not found",
+  // Ingest never creates vendors — an admin must import the vendor list first.
+  vendor_not_found: "Vendor not on the approved list — import the vendor",
   invoice_date_due_date_swapped: "Invoice date after due date",
   date_fields_identical: "Invoice and due date identical",
   due_date_missed_on_document: "Due date not found on document",
@@ -20,6 +22,17 @@ const FLAG_LABELS: Record<string, string> = {
   superseded_by_new_submission: "Superseded by new submission",
   non_invoice_document: "Non-invoice document — review and decline if not payable",
   gl_code_updated: "GL code updated",
+  // Stage-2 normalisation vocabulary. Every value the model may return has a
+  // label here — an unmapped flag falls through to a title-cased identifier,
+  // which reads like a bug to a reviewer.
+  date_swap_corrected: "Invoice and due date were swapped — corrected",
+  due_date_before_invoice_date: "Due date not after invoice date — due date dropped",
+  invoice_number_from_po: "Invoice number taken from a PO reference",
+  invoice_number_missing: "Invoice number not found",
+  total_amount_missing: "Total amount not found",
+  total_mismatch: "Subtotal plus tax does not equal the total",
+  multiple_invoices_in_document: "Multiple invoices in one document",
+  low_ocr_quality: "Poor scan quality — verify the values",
 };
 
 function formatFlag(flag: string): string {

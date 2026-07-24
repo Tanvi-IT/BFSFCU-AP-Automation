@@ -91,8 +91,11 @@ const InvoiceDetail = () => {
       const detail = await invoicesApi.get(id!);
       const invoiceData: any = {
         ...detail,
-        vendors: detail.vendor_id
-          ? { id: detail.vendor_id, name: detail.vendor_name }
+        // Keyed on the name: the API falls back to the vendor recorded when the
+        // invoice was validated, so removing the vendor from the list later
+        // must not blank out the payee here.
+        vendors: detail.vendor_name
+          ? { id: detail.vendor_id ?? "", name: detail.vendor_name }
           : null,
       };
       const lineItemsData = (detail as any).line_items ?? [];
@@ -576,16 +579,6 @@ const InvoiceDetail = () => {
                           {format(new Date(invoice.exportedAt), 'MMM dd, yyyy HH:mm')}
                         </span>
                       </div>
-                      {invoice.exportBatchId && (
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="h-auto p-0 text-xs"
-                          onClick={() => navigate('/exports/history')}
-                        >
-                          View Export History →
-                        </Button>
-                      )}
                     </div>
                   ) : (
                     <Badge variant="outline" className="mt-1">No</Badge>

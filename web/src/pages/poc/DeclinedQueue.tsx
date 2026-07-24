@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DateRangeFilter, EMPTY_DATE_RANGE, type DateRange } from "@/components/DateRangeFilter";
 import { invoicesApi, QUEUE } from "@/services/invoices";
 import { Loader2, XCircle, Eye, Building2, Search } from "lucide-react";
 import { format } from "date-fns";
@@ -32,52 +32,50 @@ export default function DeclinedQueue() {
   const [invoices, setInvoices] = useState<DeclinedInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("all");
+  const [dateRange, setDateRange] = useState<DateRange>(EMPTY_DATE_RANGE);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
+  // Debounced so typing a vendor name is one query, not one per keystroke.
+  const [appliedSearch, setAppliedSearch] = useState("");
   useEffect(() => {
+    const t = window.setTimeout(() => setAppliedSearch(searchQuery.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [searchQuery]);
+
+  // Any filter change invalidates the accumulated pages, so start over at 0.
+  useEffect(() => {
+    setPage(0);
     fetchDeclinedInvoices(0, true);
-  }, [dateFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedSearch, dateRange.from, dateRange.to]);
 
   useEffect(() => {
     if (page > 0) fetchDeclinedInvoices(page, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   const fetchDeclinedInvoices = async (pageNum: number, reset: boolean) => {
     if (reset) setIsLoading(true);
     try {
       // Legacy status 'rejected' is 'declined' in the new schema.
+      //
+      // Search and date range are applied server-side, against `updated_at` —
+      // the timestamp of the decline, which is the "Declined Date" column. Doing
+      // it here in the browser would only ever filter the pages already loaded,
+      // so an old invoice would stay invisible until you had clicked Load More
+      // past it.
       const rows = await invoicesApi.list({
         status: QUEUE.declined,
         limit: PAGE_SIZE,
         offset: pageNum * PAGE_SIZE,
+        dateField: "updated_at",
+        ...(appliedSearch ? { search: appliedSearch } : {}),
+        ...(dateRange.from ? { dateFrom: dateRange.from } : {}),
+        ...(dateRange.to ? { dateTo: dateRange.to } : {}),
       });
 
-      // Date filtering is applied client-side for now; if these queues grow,
-      // move it into the API as a query parameter.
-      const cutoff = (() => {
-        const d = new Date();
-        if (dateFilter === "today") {
-          d.setHours(0, 0, 0, 0);
-          return d;
-        }
-        if (dateFilter === "week") {
-          d.setDate(d.getDate() - 7);
-          return d;
-        }
-        if (dateFilter === "month") {
-          d.setDate(d.getDate() - 30);
-          return d;
-        }
-        return null;
-      })();
-
-      const filtered = cutoff
-        ? rows.filter((inv) => new Date(inv.updated_at) >= cutoff)
-        : rows;
-
-      const mapped = filtered.map((inv) => ({
+      const mapped = rows.map((inv) => ({
         id: inv.id,
         invoice_number: inv.invoice_number ?? "",
         total_amount: Number(inv.total_amount),
@@ -86,7 +84,9 @@ export default function DeclinedQueue() {
         updated_at: inv.updated_at,
         // Renamed: checker_comment → decline_reason
         checker_comment: (inv as { decline_reason?: string | null }).decline_reason ?? null,
-        vendor: inv.vendor_id ? { id: inv.vendor_id, name: inv.vendor_name ?? "—" } : null,
+        // Name, not vendor_id: a vendor removed by a later list upload must not
+        // blank out the payee on invoices already decided.
+        vendor: inv.vendor_name ? { id: inv.vendor_id ?? "", name: inv.vendor_name } : null,
       }));
 
       if (reset) {
@@ -102,16 +102,6 @@ export default function DeclinedQueue() {
     }
   };
 
-  const filteredInvoices = invoices.filter(inv => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      inv.invoice_number?.toLowerCase().includes(q) ||
-      inv.vendor?.name?.toLowerCase().includes(q) ||
-      inv.checker_comment?.toLowerCase().includes(q)
-    );
-  });
-
   return (
     <Layout>
       <div className="space-y-6">
@@ -121,12 +111,12 @@ export default function DeclinedQueue() {
             Declined
           </h1>
           <p className="text-muted-foreground mt-1">
-            Rejected invoices for audit and traceability ({filteredInvoices.length}{hasMore ? "+" : ""})
+            Rejected invoices for audit and traceability ({invoices.length}{hasMore ? "+" : ""})
           </p>
         </div>
 
-        <div className="flex gap-3 items-center">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[16rem] max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search by vendor, invoice #, or reason..."
@@ -135,32 +125,26 @@ export default function DeclinedQueue() {
               className="pl-9"
             />
           </div>
-          <Select value={dateFilter} onValueChange={(v) => { setDateFilter(v); setPage(0); }}>
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Dates</SelectItem>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="week">Last 7 Days</SelectItem>
-              <SelectItem value="month">Last 30 Days</SelectItem>
-            </SelectContent>
-          </Select>
+          <DateRangeFilter value={dateRange} onChange={setDateRange} label="Declined" />
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Declined Invoices ({filteredInvoices.length}{hasMore ? "+" : ""})</CardTitle>
+            <CardTitle>Declined Invoices ({invoices.length}{hasMore ? "+" : ""})</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             {isLoading ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : filteredInvoices.length === 0 ? (
+            ) : invoices.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
                 <XCircle className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                <p className="mt-4">No declined invoices</p>
+                <p className="mt-4">
+                  {appliedSearch || dateRange.from || dateRange.to
+                    ? "No declined invoices match these filters"
+                    : "No declined invoices"}
+                </p>
               </div>
             ) : (
               <Table>
@@ -175,7 +159,7 @@ export default function DeclinedQueue() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredInvoices.map((invoice) => (
+                  {invoices.map((invoice) => (
                     <TableRow key={invoice.id}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">

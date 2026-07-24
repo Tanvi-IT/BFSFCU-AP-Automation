@@ -37,13 +37,34 @@ export interface Vendor {
 }
 
 export const vendorsApi = {
-  list: (params: { status?: VendorStatus; search?: string } = {}) =>
+  list: (
+    params: { status?: VendorStatus; search?: string; limit?: number; offset?: number } = {}
+  ) =>
     api
       .get<{ vendors: Vendor[] }>("/vendors", {
         status: params.status,
         search: params.search,
+        limit: params.limit,
+        offset: params.offset,
       })
       .then((r) => r.vendors),
+
+  /**
+   * Every vendor, following the API's pagination to the end.
+   *
+   * `list()` without a limit returns the server default of 100, which silently
+   * truncated a directory of several hundred — the page showed "100" and the
+   * rest simply did not exist as far as the UI was concerned.
+   */
+  listAll: async (params: { status?: VendorStatus; search?: string } = {}) => {
+    const PAGE = 500; // the API's maximum
+    const all: Vendor[] = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const batch = await vendorsApi.list({ ...params, limit: PAGE, offset });
+      all.push(...batch);
+      if (batch.length < PAGE) return all;
+    }
+  },
 
   get: (id: string) => api.get<Vendor>(`/vendors/${id}`),
 
@@ -66,14 +87,22 @@ export const vendorsApi = {
       coding
     ),
 
-  /** Admin: bulk upload a vendor list (CSV or XLSX). */
+  /**
+   * Admin: upload a vendor list (CSV or XLSX). The file **replaces** the
+   * directory — rows in it are created/updated and set active, and vendors
+   * absent from it are removed. Existing invoices are unaffected: their vendor
+   * was settled at validation time.
+   */
   import: (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return api.upload<{ inserted: number; updated: number; skipped: number; errors: string[] }>(
-      "/vendors/import",
-      form
-    );
+    return api.upload<{
+      inserted: number;
+      updated: number;
+      removed: number;
+      skipped: number;
+      errors: string[];
+    }>("/vendors/import", form);
   },
 };
 

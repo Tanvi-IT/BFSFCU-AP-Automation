@@ -118,6 +118,12 @@ export default {
           from: { transform: "translateX(100%)" },
           to: { transform: "translateX(0)" },
         },
+        // A bar that sweeps left-to-right forever: work is happening but its
+        // duration is unknown (background extraction reports no percentage).
+        indeterminate: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(400%)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -126,6 +132,7 @@ export default {
         "fade-in": "fade-in 0.3s ease-out forwards",
         "scale-in": "scale-in 0.2s ease-out forwards",
         "slide-in-right": "slide-in-right 0.3s ease-out",
+        indeterminate: "indeterminate 1.4s ease-in-out infinite",
       },
     },
   },

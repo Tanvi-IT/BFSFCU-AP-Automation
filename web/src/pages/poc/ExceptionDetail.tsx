@@ -94,11 +94,13 @@ export default function ExceptionDetail() {
       const row = await invoicesApi.get(invoiceId);
       const data = {
         ...row,
-        vendors: row.vendor_id
+        vendors: row.vendor_name
           ? {
-              id: row.vendor_id,
+              id: row.vendor_id ?? "",
               name: row.vendor_name,
-              status: (row as any).vendor_status ?? "active",
+              // No vendor_id means the name is only a snapshot — the vendor is
+              // not on the approved list, so it is not active.
+              status: row.vendor_id ? ((row as any).vendor_status ?? "active") : "unverified",
               bank_verified: (row as any).vendor_bank_verified ?? false,
             }
           : null,

@@ -61,43 +61,70 @@ export interface VendorImportRow {
   emailDomain?: string | null;
   bankAccount?: string | null;
   externalId?: string | null;
-  status?: VendorStatus;
+  /** ACH details, as they appear on a bank's ACH vendor listing. */
+  achRoutingNumber?: string | null;
+  achAccountNumber?: string | null;
+  // No status: an imported vendor is always set 'active'. Presence on the
+  // admin's list is the approval.
 }
 
 /**
- * Bulk import vendors (admin upload).
+ * Bulk import vendors (admin upload). **The upload replaces the vendor list.**
  *
- * Matches an existing vendor on tax_id when present, otherwise on a
- * case-insensitive name, and updates it; inserts otherwise. Runs in one
- * transaction so a bad row does not leave a half-applied import. Marked
- * source='upload' to distinguish from auto-created vendors.
+ * The uploaded file is authoritative: every row in it is created or updated and
+ * set `active`, and any vendor missing from it is removed. The whole thing runs
+ * in one transaction, so a failure part-way leaves the previous list intact
+ * rather than a half-replaced one.
+ *
+ * Removal is unconditional, including vendors that existing invoices point at.
+ * That is safe because an invoice's vendor is settled when it is validated: the
+ * name is copied to `invoices.vendor_name_snapshot` at that moment, and the
+ * foreign key is ON DELETE SET NULL. A later list upload therefore drops the
+ * live link without changing what the invoice says it was for.
  */
 export async function importMany(
   rows: readonly VendorImportRow[],
   actorId: string
-): Promise<{ inserted: number; updated: number }> {
+): Promise<{
+  inserted: number;
+  updated: number;
+  removed: number;
+}> {
   return transaction(async (client) => {
     let inserted = 0;
     let updated = 0;
+    /** Every vendor id present in the uploaded file. */
+    const keptIds: string[] = [];
 
     for (const r of rows) {
+      // Match order matters on re-import. external_id (the ERP vendor number)
+      // is checked first because it is stable: a vendor renamed in the source
+      // system would otherwise fail the name match and be inserted a second
+      // time, leaving two records competing to match the same invoices.
       const existing = await client.query<{ id: string }>(
         `SELECT id FROM vendors
-          WHERE (($1::text IS NOT NULL AND tax_id = $1)
-             OR  lower(name) = lower($2))
+          WHERE (($1::text IS NOT NULL AND external_id = $1)
+             OR  ($2::text IS NOT NULL AND tax_id = $2)
+             OR  lower(name) = lower($3))
+          ORDER BY (external_id IS NOT DISTINCT FROM $1) DESC,
+                   (tax_id      IS NOT DISTINCT FROM $2) DESC
           LIMIT 1`,
-        [r.taxId ?? null, r.name]
+        [r.externalId ?? null, r.taxId ?? null, r.name]
       );
 
+      // Being on the admin's uploaded list is what makes a vendor approved, so
+      // status is forced to 'active' rather than read from the file.
       if (existing.rows[0]) {
         await client.query(
           `UPDATE vendors
-              SET name         = $2,
-                  tax_id       = COALESCE($3, tax_id),
-                  email_domain = COALESCE($4, email_domain),
-                  bank_account = COALESCE($5, bank_account),
-                  external_id  = COALESCE($6, external_id),
-                  status       = COALESCE($7::vendor_status, status)
+              SET name               = $2,
+                  tax_id             = COALESCE($3, tax_id),
+                  email_domain       = COALESCE($4, email_domain),
+                  bank_account       = COALESCE($5, bank_account),
+                  external_id        = COALESCE($6, external_id),
+                  ach_routing_number = COALESCE($7, ach_routing_number),
+                  ach_account_number = COALESCE($8, ach_account_number),
+                  status             = 'active'
             WHERE id = $1`,
           [
             existing.rows[0].id,
@@ -106,34 +133,55 @@ export async function importMany(
             r.emailDomain ?? null,
             r.bankAccount ?? null,
             r.externalId ?? null,
-            r.status ?? null,
+            r.achRoutingNumber ?? null,
+            r.achAccountNumber ?? null,
           ]
         );
+        keptIds.push(existing.rows[0].id);
         updated++;
       } else {
-        await client.query(
-          `INSERT INTO vendors (name, tax_id, email_domain, bank_account, external_id, status, source)
-           VALUES ($1, $2, $3, $4, $5, COALESCE($6::vendor_status, 'pending_verification'), 'upload')`,
+        const ins = await client.query<{ id: string }>(
+          `INSERT INTO vendors
+             (name, tax_id, email_domain, bank_account, external_id,
+              ach_routing_number, ach_account_number, status, source)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 'upload')
+           RETURNING id`,
           [
             r.name,
             r.taxId ?? null,
             r.emailDomain ?? null,
             r.bankAccount ?? null,
             r.externalId ?? null,
-            r.status ?? null,
+            r.achRoutingNumber ?? null,
+            r.achAccountNumber ?? null,
           ]
         );
+        const row = ins.rows[0];
+        if (!row) throw new Error('Vendor insert returned no row');
+        keptIds.push(row.id);
         inserted++;
       }
     }
 
+    // Replace semantics. `keptIds` is never empty — the route rejects a file
+    // with no valid rows before reaching here, which is what stops an unreadable
+    // upload from wiping the list.
+    const deleted = await client.query(
+      `DELETE FROM vendors
+        WHERE id <> ALL($1::uuid[])
+        RETURNING id`,
+      [keptIds]
+    );
+
+    const removed = deleted.rowCount ?? 0;
+
     await client.query(
       `INSERT INTO audit_logs (entity_type, entity_id, action, user_id, metadata)
        VALUES ('vendor', NULL, 'bulk_imported', $1, $2::jsonb)`,
-      [actorId, JSON.stringify({ inserted, updated, total: rows.length })]
+      [actorId, JSON.stringify({ inserted, updated, removed, total: rows.length })]
     );
 
-    return { inserted, updated };
+    return { inserted, updated, removed };
   });
 }
 

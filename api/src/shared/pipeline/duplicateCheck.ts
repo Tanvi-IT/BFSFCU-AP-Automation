@@ -31,7 +31,8 @@ export type DuplicateType = 'hard' | 'soft' | null;
 
 export interface DuplicateInput {
   invoiceId: string;
-  vendorId: string;
+  /** null when the vendor is not on the master list. */
+  vendorId: string | null;
   invoiceNumber: string | null;
   totalAmount: number | null;
   invoiceDate: string | null;
@@ -63,6 +64,10 @@ interface PriorRow {
 }
 
 export async function detectDuplicate(input: DuplicateInput): Promise<DuplicateResult> {
+  // Every rule below is scoped to a vendor. With no vendor there is nothing to
+  // compare against, and the invoice is already headed for Exceptions.
+  if (!input.vendorId) return NONE;
+
   // ---- hard: same vendor + same invoice number -----------------------------
   if (input.invoiceNumber) {
     const priors = await query<PriorRow>(

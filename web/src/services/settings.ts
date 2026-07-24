@@ -1,9 +1,8 @@
 /**
  * ERP export services.
  *
- * Trimmed to what the app still uses after the settings/ERP-admin screens were
- * removed: reading ERP connectors (for the export button's config) and the
- * export history list.
+ * Only the connector config the export button reads. Export history was removed
+ * outright — exports are not audited, so nothing records or lists them.
  */
 
 import { api } from "@/lib/api";
@@ -11,7 +10,4 @@ import { api } from "@/lib/api";
 export const erpApi = {
   connectors: () =>
     api.get<{ connectors: any[] }>("/erp/connectors").then((r) => r.connectors),
-
-  exportHistory: () =>
-    api.get<{ history: any[] }>("/erp/export-history").then((r) => r.history),
 };

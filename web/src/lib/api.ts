@@ -107,6 +107,85 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return (isJson ? await res.json() : await res.text()) as T;
 }
 
+/**
+ * Multipart upload that reports byte-level progress.
+ *
+ * `fetch` has no way to observe how much of a request body has been sent, so
+ * this is the one call in this layer built on XMLHttpRequest. Cookie behaviour
+ * is deliberately identical to `request()`: `withCredentials` is left at its
+ * default of false, which sends the session cookie same-origin and withholds it
+ * cross-origin — exactly what `credentials: "same-origin"` does.
+ */
+function uploadWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: (percent: number) => void,
+  signal?: AbortSignal
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ApiError(0, "aborted", "Upload cancelled"));
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", buildUrl(path));
+
+    xhr.upload.onprogress = (e) => {
+      // `lengthComputable` is false for chunked bodies; leave the bar alone
+      // rather than reporting a percentage we cannot actually compute.
+      if (onProgress && e.lengthComputable && e.total > 0) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      const contentType = xhr.getResponseHeader("content-type") ?? "";
+      const isJson = contentType.includes("application/json");
+      const raw = xhr.responseText;
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (xhr.status === 204 || raw === "") {
+          resolve(undefined as T);
+          return;
+        }
+        try {
+          resolve((isJson ? JSON.parse(raw) : raw) as T);
+        } catch {
+          reject(new ApiError(xhr.status, "internal_error", "Malformed response from server"));
+        }
+        return;
+      }
+
+      let parsed: ApiErrorBody | null = null;
+      if (isJson) {
+        try {
+          parsed = JSON.parse(raw) as ApiErrorBody;
+        } catch {
+          parsed = null;
+        }
+      }
+      reject(
+        new ApiError(
+          xhr.status,
+          parsed?.error?.code ?? "internal_error",
+          parsed?.error?.message ?? xhr.statusText ?? "Upload failed",
+          parsed?.error?.details
+        )
+      );
+    };
+
+    xhr.onerror = () =>
+      reject(new ApiError(0, "network_error", "Connection lost during upload"));
+    xhr.ontimeout = () => reject(new ApiError(0, "timeout", "Upload timed out"));
+    xhr.onabort = () => reject(new ApiError(0, "aborted", "Upload cancelled"));
+
+    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+
+    xhr.send(formData);
+  });
+}
+
 export const api = {
   get: <T>(path: string, query?: RequestOptions["query"], signal?: AbortSignal) =>
     request<T>(path, { method: "GET", ...(query ? { query } : {}), ...(signal ? { signal } : {}) }),
@@ -120,6 +199,9 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 
   upload: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", formData }),
+
+  /** Multipart upload that reports send progress as a 0–100 percentage. */
+  uploadWithProgress,
 
   /** Download a binary response (Excel export, PDF, …). */
   blob: async (path: string, query?: RequestOptions["query"]): Promise<Blob> => {

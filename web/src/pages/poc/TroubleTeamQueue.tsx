@@ -56,8 +56,12 @@ export default function TroubleTeamQueue() {
       const rows = await invoicesApi.list({ status: QUEUE.exceptions, limit: 500 });
       const data = rows.map((r) => ({
         ...r,
-        vendors: r.vendor_id
-          ? { id: r.vendor_id, name: r.vendor_name, status: (r as any).vendor_status ?? "active" }
+        vendors: r.vendor_name
+          ? {
+              id: r.vendor_id ?? "",
+              name: r.vendor_name,
+              status: r.vendor_id ? ((r as any).vendor_status ?? "active") : "unverified",
+            }
           : null,
       }));
 

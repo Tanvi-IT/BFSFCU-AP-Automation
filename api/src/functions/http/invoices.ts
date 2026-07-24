@@ -53,11 +53,38 @@ app.http('invoices', {
         const status = url.searchParams.get('status') ?? undefined;
         const search = url.searchParams.get('search') ?? undefined;
 
+        // Date range for the historical queues. Validated here so a malformed
+        // value is a 400 rather than a Postgres cast error surfacing as a 500.
+        const dateFrom = url.searchParams.get('dateFrom') ?? undefined;
+        const dateTo = url.searchParams.get('dateTo') ?? undefined;
+        for (const [name, value] of [
+          ['dateFrom', dateFrom],
+          ['dateTo', dateTo],
+        ] as const) {
+          if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            throw AppError.validation(`${name} must be a YYYY-MM-DD date`);
+          }
+        }
+
+        const dateFieldRaw = url.searchParams.get('dateField');
+        if (
+          dateFieldRaw &&
+          !(invoices.DATE_FIELDS as readonly string[]).includes(dateFieldRaw)
+        ) {
+          throw AppError.validation(
+            `dateField must be one of: ${invoices.DATE_FIELDS.join(', ')}`
+          );
+        }
+        const dateField = (dateFieldRaw as invoices.DateField | null) ?? undefined;
+
         const rows = await invoices.list({
           limit: Number.isFinite(limit) ? limit : 50,
           offset: Number.isFinite(offset) ? offset : 0,
           ...(status ? { status: status as invoices.InvoiceStatus } : {}),
           ...(search ? { search } : {}),
+          ...(dateFrom ? { dateFrom } : {}),
+          ...(dateTo ? { dateTo } : {}),
+          ...(dateField ? { dateField } : {}),
         });
 
         return ok({ invoices: rows, limit, offset });

@@ -46,12 +46,83 @@ function actionVariant(action: string): "default" | "secondary" | "destructive" 
       return "default";
     case "declined":
     case "deleted":
+    case "routed_to_exception":
       return "destructive";
     case "uploaded":
     case "processed":
       return "secondary";
     default:
       return "outline";
+  }
+}
+
+/** Internal invoice statuses → the queue names the rest of the app shows. */
+function queueLabel(status: unknown): string {
+  switch (status) {
+    case "validated":
+      return "Low Confidence";
+    case "submitted":
+      return "High Confidence";
+    case "exception":
+      return "Exceptions";
+    case "approved":
+      return "Approved";
+    case "rejected":
+    case "declined":
+      return "Declined";
+    default:
+      return String(status ?? "—");
+  }
+}
+
+/**
+ * Turn one audit row into a readable line. The metadata is a raw JSON blob;
+ * this maps the events that matter — the automatic routing to a confidence
+ * queue, and every move into and out of Exceptions — into plain English, so the
+ * invoice's journey reads as a story rather than a dump of internal fields.
+ */
+function describeAudit(e: {
+  action: string;
+  metadata: Record<string, unknown> | null;
+}): { label: string; detail: string | null } {
+  const m = e.metadata ?? {};
+  const conf =
+    typeof m.confidence === "number" ? ` · ${Math.round(m.confidence * 100)}% confidence` : "";
+
+  switch (e.action) {
+    case "uploaded":
+      return { label: "Uploaded", detail: typeof m.filename === "string" ? m.filename : null };
+    case "processed":
+      // The system's routing decision — which confidence queue it landed in.
+      return { label: `Routed to ${queueLabel(m.status)}`, detail: conf ? conf.slice(3) : null };
+    case "returned_to_review":
+      return {
+        label: "Returned to review",
+        detail: `${queueLabel(m.from)} → ${queueLabel(m.to ?? "validated")}`,
+      };
+    case "returned_to_submitter":
+      return { label: "Returned to submitter", detail: (m.reason as string) || null };
+    case "routed_to_exception":
+      return {
+        label: "Moved to Exceptions",
+        detail: [queueLabel(m.from) + " → Exceptions", m.reason].filter(Boolean).join(" · "),
+      };
+    case "submitted_for_approval":
+      return { label: "Sent for approval", detail: `${queueLabel(m.from)} → Approval` };
+    case "approved":
+      return { label: "Approved", detail: (m.note as string) || null };
+    case "declined":
+      return { label: "Declined", detail: (m.reason as string) || null };
+    case "superseded":
+      return { label: "Superseded by a newer upload", detail: null };
+    case "note_added":
+      return { label: "Note added", detail: null };
+    case "supplemental_added":
+      return { label: "Document attached", detail: (m.filename as string) || null };
+    case "supplemental_removed":
+      return { label: "Document removed", detail: null };
+    default:
+      return { label: e.action.replace(/_/g, " "), detail: null };
   }
 }
 
@@ -62,9 +133,10 @@ function InvoiceHistory({ invoice, onClose }: { invoice: Invoice; onClose: () =>
     queryFn: () => activityApi.audit(invoice.id),
   });
 
-  // Only what a user did — skip system events (extraction, auto-routing) that
-  // have no actor.
-  const entries = data?.filter((e) => e.user_id);
+  // The full journey, including the system's automatic routing to a confidence
+  // queue and every move in and out of Exceptions. System events have no actor
+  // and render as "System".
+  const entries = data;
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -85,29 +157,31 @@ function InvoiceHistory({ invoice, onClose }: { invoice: Invoice; onClose: () =>
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         ) : !entries || entries.length === 0 ? (
-          <p className="py-8 text-center text-muted-foreground">No user actions recorded for this invoice.</p>
+          <p className="py-8 text-center text-muted-foreground">No history recorded for this invoice.</p>
         ) : (
           <ol className="relative border-l border-border ml-2 space-y-5 py-2">
-            {entries.map((e) => (
-              <li key={e.id} className="ml-4">
-                <div className="absolute -left-[7px] mt-1.5 h-3 w-3 rounded-full bg-primary" />
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant={actionVariant(e.action)}>{e.action.replace(/_/g, " ")}</Badge>
-                  {(e.metadata as Record<string, unknown> | null)?.self_approved === true && (
-                    <Badge variant="destructive" className="text-[10px]">self-approved</Badge>
+            {entries.map((e) => {
+              const { label, detail } = describeAudit(e);
+              return (
+                <li key={e.id} className="ml-4">
+                  <div className="absolute -left-[7px] mt-1.5 h-3 w-3 rounded-full bg-primary" />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant={actionVariant(e.action)}>{label}</Badge>
+                    {(e.metadata as Record<string, unknown> | null)?.self_approved === true && (
+                      <Badge variant="destructive" className="text-[10px]">self-approved</Badge>
+                    )}
+                    {/* Email for a person, "System" for automatic events. */}
+                    <span className="text-sm font-medium">{e.actor_name || "System"}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {format(new Date(e.created_at), "PPp")}
+                    </span>
+                  </div>
+                  {detail && (
+                    <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
                   )}
-                  <span className="text-sm font-medium">{e.actor_name || "Unknown user"}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {format(new Date(e.created_at), "PPp")}
-                  </span>
-                </div>
-                {e.metadata && Object.keys(e.metadata).length > 0 && (
-                  <pre className="mt-1 text-xs bg-muted rounded p-2 overflow-auto max-h-32">
-                    {JSON.stringify(e.metadata, null, 2)}
-                  </pre>
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ol>
         )}
       </DialogContent>

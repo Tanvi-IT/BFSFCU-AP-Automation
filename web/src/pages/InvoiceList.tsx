@@ -14,6 +14,7 @@ import { StatusBadge, RiskBadge } from "@/components/StatusBadge";
 import { VariationBadge } from "@/components/VariationBadge";
 import { ERPExportButton } from "@/components/ERPExportButton";
 import { invoicesApi } from "@/services/invoices";
+import { DateRangeFilter, EMPTY_DATE_RANGE, type DateRange } from "@/components/DateRangeFilter";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -88,6 +89,12 @@ const InvoiceList = () => {
   const [riskFilter, setRiskFilter] = useState<string>("all");
   const [dueDateFilter, setDueDateFilter] = useState<string>("all");
   const [taxFlagFilter, setTaxFlagFilter] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<DateRange>(EMPTY_DATE_RANGE);
+
+  // The sidebar's "Approved" entry is this page at ?status=approved. It is a
+  // historical record rather than a working list, so it gets a search box and a
+  // date range instead of the queue-triage filters.
+  const isApprovedView = statusFilter === "approved";
   
   // Batch approval state
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
@@ -104,17 +111,28 @@ const InvoiceList = () => {
   const [hasMore, setHasMore] = useState(true);
   const PAGE_SIZE = 25;
 
-  // Item 24: refetch when page OR statusFilter changes. Because the status filter is now
-  // applied in the query (not client-side), changing status must trigger a fresh query.
+  // Debounced so typing a vendor name issues one query, not one per keystroke.
+  const [appliedSearch, setAppliedSearch] = useState("");
   useEffect(() => {
-    fetchInvoices();
-  }, [page, statusFilter]);
+    const t = window.setTimeout(() => setAppliedSearch(searchQuery.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [searchQuery]);
 
-  // When the status filter changes, reset to the first page so we don't request a later
-  // page of a freshly-filtered (shorter) list and see nothing.
+  // Any filter that is applied IN the query invalidates the accumulated pages,
+  // so it resets to page 0 and fetches explicitly. Passing the page number in
+  // rather than reading it from state avoids the race where this effect and the
+  // page effect below both fire on the same commit — one of them with a stale
+  // page — and the late response appends rows from the previous filter.
   useEffect(() => {
     setPage(0);
-  }, [statusFilter]);
+    fetchInvoices(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, appliedSearch, dateRange.from, dateRange.to]);
+
+  useEffect(() => {
+    if (page > 0) fetchInvoices(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   useEffect(() => {
     const s = searchParams.get("status") || "all";
@@ -125,7 +143,7 @@ const InvoiceList = () => {
     applyFilters();
   }, [invoices, searchQuery, statusFilter, riskFilter, dueDateFilter, taxFlagFilter]);
 
-  const fetchInvoices = async () => {
+  const fetchInvoices = async (pageNum: number = page) => {
     try {
       // Item 24 fix: apply the active status filter IN the query, not client-side after
       // pagination. Previously .range() sliced the full mixed-status set first, so with many
@@ -133,10 +151,23 @@ const InvoiceList = () => {
       // hid behind "Load More" even though the total was under PAGE_SIZE. Filtering in the
       // query means .range(0,24) returns the first 25 rows OF THE SELECTED STATUS.
       // RLS still scopes by tenant, so email-ingested invoices are included.
+      //
+      // On the Approved view the search text and date range go into the query
+      // too, against `approved_at` — the "Approved Date" column. Filtering the
+      // returned page in the browser would only search the rows already loaded,
+      // which defeats the point of a historical view.
       const rowsRaw = await invoicesApi.list({
         ...(statusFilter !== 'all' ? { status: statusFilter as any } : {}),
         limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
+        offset: pageNum * PAGE_SIZE,
+        ...(isApprovedView
+          ? {
+              dateField: 'approved_at' as const,
+              ...(appliedSearch ? { search: appliedSearch } : {}),
+              ...(dateRange.from ? { dateFrom: dateRange.from } : {}),
+              ...(dateRange.to ? { dateTo: dateRange.to } : {}),
+            }
+          : {}),
       });
       // Approved view sorts by approval time; other views by creation time.
       const sortColumn = statusFilter === 'approved' ? 'approved_at' : 'created_at';
@@ -147,7 +178,10 @@ const InvoiceList = () => {
         )
         .map((r) => ({
           ...r,
-          vendors: r.vendor_id ? { id: r.vendor_id, name: r.vendor_name } : null,
+          // Keyed on the name, not on vendor_id: the API already falls back to
+          // the name captured at validation, so an invoice whose vendor has
+          // since been removed from the list still shows who it was for.
+          vendors: r.vendor_name ? { id: r.vendor_id ?? "", name: r.vendor_name } : null,
         }));
 
 
@@ -208,7 +242,7 @@ const InvoiceList = () => {
         };
       });
 
-      setInvoices(prev => page === 0 ? mapped : [...prev, ...mapped]);
+      setInvoices(prev => pageNum === 0 ? mapped : [...prev, ...mapped]);
       setHasMore(mapped.length === PAGE_SIZE);
     } catch (error) {
       console.error('[InvoiceList] Error fetching invoices:', error);
@@ -220,7 +254,10 @@ const InvoiceList = () => {
   const applyFilters = () => {
     let filtered = [...invoices];
 
-    if (searchQuery) {
+    // On the Approved view the server already applied the search across the
+    // whole history. Re-filtering here would narrow it back down to whatever
+    // subset happens to be loaded.
+    if (searchQuery && !isApprovedView) {
       filtered = filtered.filter(inv =>
         inv.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
         inv.vendor?.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -394,6 +431,23 @@ const InvoiceList = () => {
         </div>
 
 
+        {isApprovedView ? (
+          // Historical view: a bare filter row above the table, matching the
+          // Declined queue. No "Filters" card — two controls do not need a
+          // titled panel of their own.
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-[16rem] flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by vendor or invoice #..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <DateRangeFilter value={dateRange} onChange={setDateRange} label="Approved" />
+          </div>
+        ) : (
         <Card>
           <CardHeader>
             <CardTitle>Filters</CardTitle>
@@ -456,6 +510,7 @@ const InvoiceList = () => {
             </div>
           </CardContent>
         </Card>
+        )}
 
         <Card>
           <CardContent className="p-0">

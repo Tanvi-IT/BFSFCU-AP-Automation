@@ -100,6 +100,8 @@ export default function HighConfidenceDetail() {
   const [editAmount, setEditAmount] = useState("");
   const [editInvoiceNumber, setEditInvoiceNumber] = useState("");
   const [editDate, setEditDate] = useState("");
+  const [editAchRouting, setEditAchRouting] = useState("");
+  const [editAchAccount, setEditAchAccount] = useState("");
   const [isFieldEditing, setIsFieldEditing] = useState(false);
   // Vendor re-link autocomplete (Items 31/38 — link invoice to existing vendor)
   const [vendorSearchResults, setVendorSearchResults] = useState<{id: string, name: string}[]>([]);
@@ -162,6 +164,8 @@ export default function HighConfidenceDetail() {
       setEditAmount(currentInvoice.total_amount.toString());
       setEditInvoiceNumber(currentInvoice.invoice_number);
       setEditDate(currentInvoice.invoice_date || "");
+      setEditAchRouting(currentInvoice.ach_routing_number || "");
+      setEditAchAccount(currentInvoice.ach_account_number || "");
     }
   }, [currentInvoice?.id]);
 
@@ -175,34 +179,24 @@ export default function HighConfidenceDetail() {
   const fetchHighConfidenceInvoices = async () => {
     if (!tenantId) return;
     try {
-      const rows = await invoicesApi.list({ status: QUEUE.lowConfidence, limit: 500 });
+      // High Confidence is the `submitted` status; the backend already routed
+      // here, so this page shows the set as-is for prev/next navigation. It must
+      // fetch the same status as the High Confidence list, or opening an invoice
+      // from that list would land on a page that never loaded it.
+      const rows = await invoicesApi.list({ status: QUEUE.highConfidence, limit: 500 });
       const data = rows.map((r) => ({
         ...r,
-        vendors: r.vendor_id
+        vendors: r.vendor_name
           ? {
-              id: r.vendor_id,
+              id: r.vendor_id ?? "",
               name: r.vendor_name,
-              status: (r as any).vendor_status ?? "active",
+              status: r.vendor_id ? ((r as any).vendor_status ?? "active") : "unverified",
               bank_verified: (r as any).vendor_bank_verified ?? false,
             }
           : null,
       }));
 
-
-      const highConfidence = (data || []).filter((inv: any) => {
-        const confidenceScore = 1 - (inv.anomaly_score || 0);
-        const vendorVerified = inv.vendors?.status === "active";
-        const hasAchMismatch = inv.variation_flags?.some((f: string) =>
-          ["ach_account_changed", "ach_routing_changed", "ach_new_account_captured"].includes(f)
-        ) ?? false;
-        const isAutoApproved = inv.status === "approved" && inv.approved_by === "system";
-        const hasDuplicate = inv.duplicate_type !== null && inv.duplicate_type !== 'possible_duplicate';
-        if (inv.tax_flagged) return false;
-        if (hasAchMismatch) return false;
-        return confidenceScore >= HIGH_CONFIDENCE_THRESHOLD && vendorVerified && !isAutoApproved && !hasDuplicate;
-      });
-
-      setInvoices(highConfidence.map((inv: any): InvoiceDetail => ({
+      setInvoices(data.map((inv: any): InvoiceDetail => ({
         id: inv.id,
         variation_flags: inv.variation_flags ?? null,
         invoice_number: inv.invoice_number,
@@ -286,6 +280,8 @@ export default function HighConfidenceDetail() {
         invoiceNumber: editInvoiceNumber.trim(),
         totalAmount: parseFloat(editAmount) || currentInvoice.total_amount,
         ...(editDate ? { invoiceDate: editDate } : {}),
+        achRoutingNumber: editAchRouting.trim(),
+        achAccountNumber: editAchAccount.trim(),
         // Vendor changes only via explicit selection from the dropdown.
         ...(selectedVendorId ? { vendorId: selectedVendorId } : {}),
       });
@@ -585,6 +581,8 @@ export default function HighConfidenceDetail() {
                     setEditAmount(String(currentInvoice.total_amount));
                     setEditInvoiceNumber(currentInvoice.invoice_number);
                     setEditDate(currentInvoice.invoice_date || "");
+                    setEditAchRouting(currentInvoice.ach_routing_number || "");
+                    setEditAchAccount(currentInvoice.ach_account_number || "");
                     setIsFieldEditing(true);
                   }} className="gap-1">
                     <Pencil className="h-3.5 w-3.5" />
@@ -596,6 +594,8 @@ export default function HighConfidenceDetail() {
     setEditAmount(String(currentInvoice.total_amount));
     setEditInvoiceNumber(currentInvoice.invoice_number);
     setEditDate(currentInvoice.invoice_date || "");
+    setEditAchRouting(currentInvoice.ach_routing_number || "");
+    setEditAchAccount(currentInvoice.ach_account_number || "");
     setGlValue(currentInvoice.gl_code || "");
 
     if (currentInvoice.department_id) {
@@ -839,26 +839,45 @@ export default function HighConfidenceDetail() {
                   </span>
                 </div>
               )}
-              {(currentInvoice?.ach_routing_number || currentInvoice?.ach_account_number) && (
-                <div className="field-row" style={{ marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
-                    ACH Routing #
-                  </span>
+              {/* ACH routing/account — editable when in Edit mode, matching the
+                  Low Confidence detail. The rows always render so a reviewer can
+                  fill in a value that did not carry over from the vendor. */}
+              <div className="field-row" style={{ marginTop: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
+                  ACH Routing #
+                </span>
+                {isFieldEditing ? (
+                  <input
+                    className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                    type="text"
+                    value={editAchRouting}
+                    onChange={(e) => setEditAchRouting(e.target.value)}
+                    placeholder="9-digit routing number"
+                  />
+                ) : (
                   <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#374151' }}>
-                    {currentInvoice.ach_routing_number || '—'}
+                    {currentInvoice?.ach_routing_number || '—'}
                   </span>
-                </div>
-              )}
-              {currentInvoice?.ach_account_number && (
-                <div className="field-row" style={{ marginTop: '8px' }}>
-                  <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
-                    ACH Account #
-                  </span>
+                )}
+              </div>
+              <div className="field-row" style={{ marginTop: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
+                  ACH Account #
+                </span>
+                {isFieldEditing ? (
+                  <input
+                    className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                    type="text"
+                    value={editAchAccount}
+                    onChange={(e) => setEditAchAccount(e.target.value)}
+                    placeholder="Account number"
+                  />
+                ) : (
                   <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#374151' }}>
-                    {currentInvoice.ach_account_number}
+                    {currentInvoice?.ach_account_number || '—'}
                   </span>
-                </div>
-              )}
+                )}
+              </div>
 
             
 

@@ -24,6 +24,15 @@ function normalizeHeader(h: string): string {
   return h.toLowerCase().replace(/[\s_-]+/g, '');
 }
 
+/**
+ * Spreadsheet header → vendor field, after `normalizeHeader` strips case,
+ * spaces, underscores and hyphens. Every spelling a real export has produced
+ * belongs here: an unmapped column is dropped silently, which looks like a
+ * successful import that quietly lost the bank details.
+ *
+ * The bank's "ACH Vendor Listing Report" uses vendor_id / name /
+ * bank_routing_number / bank_account_number.
+ */
 const HEADER_MAP: Record<string, keyof vendors.VendorImportRow> = {
   name: 'name',
   vendorname: 'name',
@@ -34,7 +43,19 @@ const HEADER_MAP: Record<string, keyof vendors.VendorImportRow> = {
   bankaccount: 'bankAccount',
   account: 'bankAccount',
   externalid: 'externalId',
-  status: 'status',
+  vendorid: 'externalId',
+  vendorno: 'externalId',
+  vendornumber: 'externalId',
+  bankroutingnumber: 'achRoutingNumber',
+  routingnumber: 'achRoutingNumber',
+  achroutingnumber: 'achRoutingNumber',
+  aba: 'achRoutingNumber',
+  bankaccountnumber: 'achAccountNumber',
+  accountnumber: 'achAccountNumber',
+  achaccountnumber: 'achAccountNumber',
+  // No 'status' mapping: every imported vendor is set active, so a status
+  // column in the file would be read and then ignored, which is worse than
+  // not reading it.
 };
 
 app.http('vendors-list', {
@@ -117,10 +138,6 @@ app.http('vendors-import', {
         errors.push(`Row ${i + 2}: missing vendor name`);
         return;
       }
-      if (row.status && !VALID_STATUS.has(row.status)) {
-        errors.push(`Row ${i + 2}: invalid status "${row.status}"`);
-        return;
-      }
 
       parsed.push({
         name: row.name,
@@ -128,7 +145,8 @@ app.http('vendors-import', {
         emailDomain: row.emailDomain ?? null,
         bankAccount: row.bankAccount ?? null,
         externalId: row.externalId ?? null,
-        ...(row.status ? { status: row.status as vendors.VendorStatus } : {}),
+        achRoutingNumber: row.achRoutingNumber ?? null,
+        achAccountNumber: row.achAccountNumber ?? null,
       });
     });
 
@@ -146,6 +164,7 @@ app.http('vendors-import', {
     return ok({
       inserted: result.inserted,
       updated: result.updated,
+      removed: result.removed,
       skipped: errors.length,
       errors: errors.slice(0, 20),
     });

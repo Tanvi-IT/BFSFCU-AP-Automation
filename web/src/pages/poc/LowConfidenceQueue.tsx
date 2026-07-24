@@ -330,41 +330,24 @@ export default function LowConfidenceQueue() {
       const data = rows
         .map((r) => ({
           ...r,
-          vendors: r.vendor_id
+          vendors: r.vendor_name
             ? {
-                id: r.vendor_id,
+                id: r.vendor_id ?? "",
                 name: r.vendor_name,
-                // vendor status/verification come through on the joined row
-                status: (r as any).vendor_status ?? "active",
+                // Status comes from the joined vendor row. Without one, the
+                // name is only a snapshot and the vendor is not approved.
+                status: r.vendor_id ? ((r as any).vendor_status ?? "active") : "unverified",
                 bank_verified: (r as any).vendor_bank_verified ?? false,
               }
             : null,
         }))
         .sort((a: any, b: any) => (b.anomaly_score ?? 0) - (a.anomaly_score ?? 0));
 
-      // Filter for low confidence invoices with strict queue exclusivity
-      // Tax-flagged invoices ALWAYS appear here regardless of confidence
-      const lowConfidence = (data || []).filter((inv: any) => {
-        const confidenceScore = 1 - (inv.anomaly_score || 0);
-        const vendorVerified = inv.vendors?.status === "active";
-        const hasDuplicate = inv.duplicate_type !== null && inv.duplicate_type !== 'possible_duplicate';
-
-        if (hasDuplicate) return false;
-        if (inv.tax_flagged) return true;
-
-        const hasAchMismatch = inv.variation_flags?.some((f: string) =>
-          ["ach_account_changed", "ach_routing_changed", "ach_new_account_captured"].includes(f)
-        ) ?? false;
-
-        if (hasAchMismatch) return true;
-
-        const qualifiesForHighConfidence = confidenceScore >= HIGH_CONFIDENCE_THRESHOLD && vendorVerified && !hasDuplicate && !hasAchMismatch;
-        if (qualifiesForHighConfidence) return false;
-
-        return confidenceScore < HIGH_CONFIDENCE_THRESHOLD || !vendorVerified || hasAchMismatch;
-      });
-
-      const mapped = lowConfidence.map((inv: any) => ({
+      // Low Confidence is exactly the `validated` status — the backend already
+      // routed here. This detail page shows the set as-is for prev/next
+      // navigation, matching the Low Confidence list; re-deriving it would let
+      // the list and this page disagree on which invoices exist.
+      const mapped = data.map((inv: any) => ({
         id: inv.id,
         invoice_number: inv.invoice_number,
         total_amount: inv.total_amount,
@@ -399,7 +382,6 @@ export default function LowConfidenceQueue() {
         ach_account_number: inv.ach_account_number ?? null,
         vendor: inv.vendors,
       }));
-      console.log("[LC Debug] lowConfidence count:", lowConfidence.length, "mapped:", mapped.map(i => i.invoice_number));
       setInvoices(mapped);
       // Cache the result for this tenant
       try {

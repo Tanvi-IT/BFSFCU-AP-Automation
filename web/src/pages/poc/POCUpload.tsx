@@ -1,11 +1,11 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { invoicesApi } from "@/services/invoices";
+import { invoicesApi, isInFlight, type InvoiceStatus } from "@/services/invoices";
 import { activityApi } from "@/services";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -22,14 +22,68 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
+  Clock,
+  Copy,
 } from "lucide-react";
 
+/**
+ * What a file is doing right now. These are UI stages, not invoice statuses —
+ * `uploading` is the browser sending bytes, `queued`/`extracting` mirror the
+ * background worker, and everything after that is terminal.
+ */
+type UploadStage =
+  | "pending"
+  | "uploading"
+  | "queued"
+  | "extracting"
+  | "done"
+  | "duplicate"
+  | "stalled"
+  | "error";
+
+const TERMINAL_STAGES: readonly UploadStage[] = ["done", "duplicate", "stalled", "error"];
+const isTerminal = (stage: UploadStage) => TERMINAL_STAGES.includes(stage);
+
 interface UploadFile {
+  /** Stable across re-renders so rows never reshuffle mid-upload. */
+  id: string;
   file: File;
-  status: "pending" | "uploading" | "processing" | "success" | "error";
+  stage: UploadStage;
+  /** Real bytes-sent percentage, only meaningful while `stage === "uploading"`. */
   progress: number;
   error?: string;
   invoiceId?: string;
+  /** Where the worker finally put the invoice, once it is out of our hands. */
+  finalStatus?: InvoiceStatus;
+  /** When the file entered the queue, used to stop waiting on a dead worker. */
+  queuedAt?: number;
+}
+
+/** How many files upload at once. Enough to be fast, few enough that each bar moves visibly. */
+const UPLOAD_CONCURRENCY = 3;
+
+/** How often to ask the API whether the worker has finished a queued invoice. */
+const POLL_INTERVAL_MS = 2500;
+
+/** Give up watching after this long — the worker is down or the job was poison-queued. */
+const POLL_TIMEOUT_MS = 3 * 60 * 1000;
+
+let nextFileId = 0;
+
+/** Run `worker` over `items`, at most `limit` at a time. */
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await worker(item);
+    }
+  });
+  await Promise.all(runners);
 }
 
 export default function POCUpload() {
@@ -100,15 +154,27 @@ export default function POCUpload() {
 
   const addFiles = (newFiles: File[]) => {
     const uploadFiles: UploadFile[] = newFiles.map((file) => ({
+      id: `f${nextFileId++}`,
       file,
-      status: "pending",
+      stage: "pending",
       progress: 0,
     }));
     setFiles((prev) => [...prev, ...uploadFiles]);
   };
 
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+  const removeFile = (id: string) => {
+    setFiles((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  /** Patch one row without disturbing the others. */
+  const patchFile = (id: string, patch: Partial<UploadFile>) => {
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  };
+
+  const clearFiles = () => {
+    setFiles([]);
+    const input = document.getElementById("file-input") as HTMLInputElement | null;
+    if (input) input.value = "";
   };
 
   const getFriendlyError = (message: string): string => {
@@ -120,79 +186,54 @@ export default function POCUpload() {
   };
 
   const processFiles = async () => {
-    if (files.length === 0) return;
+    const pending = files.filter((f) => f.stage === "pending");
+    if (pending.length === 0) return;
 
     setIsProcessing(true);
 
-    // Uploads now return as soon as the file is stored and queued, so they run
-    // in parallel instead of one-at-a-time. Extraction happens in the background
-    // worker — the browser no longer waits on the AI pipeline.
-    const pending = files
-      .map((f, index) => ({ f, index }))
-      .filter(({ f }) => f.status === "pending");
-
-    setFiles((prev) =>
-      prev.map((f) =>
-        f.status === "pending" ? { ...f, status: "uploading" as const, progress: 40 } : f
-      )
-    );
-
-    const results = await Promise.allSettled(
-      pending.map(({ f }) => invoicesApi.upload(f.file))
-    );
-
-    let queued = 0;
     let duplicates = 0;
     let failed = 0;
 
-    results.forEach((result, i) => {
-      const entry = pending[i];
-      if (!entry) return;
-      const { index } = entry;
+    // A few at a time rather than all at once: each file's bar then moves at a
+    // speed a human can actually read, and the API is not hit with 10 multipart
+    // bodies simultaneously.
+    await runWithConcurrency(pending, UPLOAD_CONCURRENCY, async (entry) => {
+      patchFile(entry.id, { stage: "uploading", progress: 0, error: undefined });
 
-      if (result.status === "fulfilled") {
-        const wasDuplicate = result.value.duplicate === true;
-        if (wasDuplicate) duplicates++;
-        else queued++;
-
-        setFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === index
-              ? {
-                  ...f,
-                  status: "success" as const,
-                  progress: 100,
-                  invoiceId: result.value.invoiceId,
-                  ...(wasDuplicate ? { error: "Already uploaded" } : {}),
-                }
-              : f
-          )
+      try {
+        const result = await invoicesApi.upload(entry.file, (percent) =>
+          patchFile(entry.id, { progress: percent })
         );
-      } else {
+
+        if (result.duplicate === true) {
+          duplicates++;
+          patchFile(entry.id, {
+            stage: "duplicate",
+            progress: 100,
+            invoiceId: result.invoiceId,
+          });
+          return;
+        }
+
+        // Stored and queued — the worker owns it now, so hand off to the poller.
+        patchFile(entry.id, {
+          stage: "queued",
+          progress: 100,
+          invoiceId: result.invoiceId,
+          queuedAt: Date.now(),
+        });
+      } catch (err) {
         failed++;
         const reason =
-          result.reason instanceof ApiError
-            ? result.reason.message
-            : getFriendlyError(String(result.reason?.message ?? result.reason));
-
-        setFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === index
-              ? { ...f, status: "error" as const, progress: 0, error: reason }
-              : f
-          )
-        );
+          err instanceof ApiError
+            ? err.message
+            : getFriendlyError(String((err as Error)?.message ?? err));
+        patchFile(entry.id, { stage: "error", progress: 0, error: reason });
       }
     });
 
     setIsProcessing(false);
 
-    if (queued > 0) {
-      toast({
-        title: "Uploaded",
-        description: `${queued} invoice(s) queued. Extraction runs in the background — the queues will update shortly.`,
-      });
-    }
     if (duplicates > 0) {
       toast({
         title: "Duplicates skipped",
@@ -207,44 +248,182 @@ export default function POCUpload() {
       });
     }
 
-    // Reset file list and file input so the upload area is ready for the next batch
-    setFiles([]);
-    const input = document.getElementById("file-input") as HTMLInputElement;
-    if (input) input.value = "";
+    // The list deliberately stays on screen. Extraction is still running, and
+    // clearing here is what made the whole thing feel like it vanished into the
+    // background. `Clear list` is now an explicit choice.
     fetchRecentUploads();
   };
 
-  const getStatusIcon = (status: UploadFile["status"]) => {
-    switch (status) {
-      case "success":
+  /**
+   * Watch every queued invoice until the worker is done with it.
+   *
+   * Keyed on the set of invoice ids being watched, not on `files` — otherwise
+   * each byte-progress update would tear down and restart the interval, and it
+   * would never actually fire while an upload was running.
+   */
+  const filesRef = useRef<UploadFile[]>([]);
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
+  const watchKey = files
+    .filter((f) => f.invoiceId && (f.stage === "queued" || f.stage === "extracting"))
+    .map((f) => f.invoiceId)
+    .sort()
+    .join(",");
+
+  useEffect(() => {
+    if (!watchKey) return;
+
+    let cancelled = false;
+
+    const tick = async () => {
+      const watching = filesRef.current.filter(
+        (f) => f.invoiceId && (f.stage === "queued" || f.stage === "extracting")
+      );
+      if (watching.length === 0) return;
+
+      const results = await Promise.allSettled(
+        watching.map(async (f) => ({
+          fileId: f.id,
+          invoice: await invoicesApi.get(f.invoiceId as string),
+        }))
+      );
+      if (cancelled) return;
+
+      const latest = new Map<string, InvoiceStatus>();
+      const errors = new Map<string, string | null>();
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          latest.set(r.value.fileId, r.value.invoice.status);
+          errors.set(r.value.fileId, r.value.invoice.processing_error);
+        }
+      }
+      if (latest.size === 0) return;
+
+      // Decide what settled *before* touching state: a `setFiles` updater runs
+      // during render, so anything it assigns to an outer variable is not
+      // readable here.
+      const now = Date.now();
+      const stalled = new Set(
+        watching
+          .filter((f) => {
+            const status = latest.get(f.id);
+            return (
+              status !== undefined &&
+              isInFlight(status) &&
+              f.queuedAt !== undefined &&
+              now - f.queuedAt > POLL_TIMEOUT_MS
+            );
+          })
+          .map((f) => f.id)
+      );
+      const settledAny =
+        stalled.size > 0 ||
+        watching.some((f) => {
+          const status = latest.get(f.id);
+          return status !== undefined && !isInFlight(status);
+        });
+
+      setFiles((prev) =>
+        prev.map((f) => {
+          const status = latest.get(f.id);
+          if (!status) return f;
+
+          if (!isInFlight(status)) {
+            return {
+              ...f,
+              stage: "done",
+              finalStatus: status,
+              error: errors.get(f.id) ?? undefined,
+            };
+          }
+
+          // Still the worker's: surface the queued → extracting transition, and
+          // stop waiting forever if nothing is consuming the queue.
+          if (stalled.has(f.id)) return { ...f, stage: "stalled" };
+
+          const nextStage = status === "processing" ? "extracting" : "queued";
+          return f.stage === nextStage ? f : { ...f, stage: nextStage };
+        })
+      );
+
+      if (settledAny) void fetchRecentUploads();
+    };
+
+    const timer = window.setInterval(() => void tick(), POLL_INTERVAL_MS);
+    void tick();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [watchKey]);
+
+  const getStatusIcon = (stage: UploadStage) => {
+    switch (stage) {
+      case "done":
         return <CheckCircle2 className="h-5 w-5 text-success" />;
+      case "duplicate":
+        return <Copy className="h-5 w-5 text-muted-foreground" />;
+      case "stalled":
+        return <Clock className="h-5 w-5 text-amber-500" />;
       case "error":
         return <XCircle className="h-5 w-5 text-destructive" />;
       case "uploading":
-      case "processing":
+      case "queued":
+      case "extracting":
         return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
       default:
         return <File className="h-5 w-5 text-muted-foreground" />;
     }
   };
 
-  const getStatusLabel = (status: UploadFile["status"]) => {
+  /** Where the worker put it, in the language the queue pages already use. */
+  const finalStatusLabel = (status: InvoiceStatus): string => {
     switch (status) {
-      case "success":
-        return "Processed";
+      case "validated":
+        return "In Review";
+      case "submitted":
+        return "Ready to Approve";
+      case "exception":
+        return "Needs Review";
+      case "approved":
+        return "Approved";
+      case "rejected":
+        return "Declined";
+      default:
+        return status;
+    }
+  };
+
+  const getStatusLabel = (f: UploadFile): string => {
+    switch (f.stage) {
+      case "uploading":
+        return `Uploading ${f.progress}%`;
+      case "queued":
+        return "Waiting for extraction…";
+      case "extracting":
+        return "Extracting invoice data…";
+      case "done":
+        return f.finalStatus ? `Done · ${finalStatusLabel(f.finalStatus)}` : "Done";
+      case "duplicate":
+        return "Already uploaded";
+      case "stalled":
+        return "Still processing — check the queue later";
       case "error":
         return "Failed";
-      case "uploading":
-        return "Uploading...";
-      case "processing":
-        return "Processing...";
       default:
         return "Ready";
     }
   };
 
-  const pendingCount = files.filter(f => f.status === "pending").length;
-  const successCount = files.filter(f => f.status === "success").length;
+  const pendingCount = files.filter((f) => f.stage === "pending").length;
+  const doneCount = files.filter((f) => f.stage === "done").length;
+  const finishedCount = files.filter((f) => isTerminal(f.stage)).length;
+  const activeCount = files.length - pendingCount - finishedCount;
+  const errorCount = files.filter((f) => f.stage === "error").length;
+  const batchPercent = files.length === 0 ? 0 : Math.round((finishedCount / files.length) * 100);
 
   return (
     <Layout>
@@ -315,10 +494,11 @@ export default function POCUpload() {
               <div>
                 <CardTitle>Selected Files ({files.length})</CardTitle>
                 <CardDescription>
-                  {pendingCount === 0 && successCount > 0
-                    ? `${successCount} invoice(s) processed successfully. Click View Invoices to review them in the queue.`
-                    : `${pendingCount} pending • ${successCount} processed`
-                  }
+                  {activeCount > 0
+                    ? `${finishedCount} of ${files.length} complete • ${activeCount} in progress`
+                    : pendingCount > 0
+                      ? `${pendingCount} ready to upload`
+                      : `${finishedCount} of ${files.length} complete${errorCount > 0 ? ` • ${errorCount} failed` : ""}`}
                 </CardDescription>
               </div>
               <div className="flex gap-2">
@@ -330,7 +510,7 @@ export default function POCUpload() {
                     {isProcessing ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Processing...
+                        Uploading...
                       </>
                     ) : (
                       <>
@@ -340,7 +520,7 @@ export default function POCUpload() {
                     )}
                   </Button>
                 )}
-                {successCount > 0 && (
+                {doneCount > 0 && (
                   <Button
                     variant="outline"
                     onClick={() => navigate("/poc/low-confidence")}
@@ -348,16 +528,33 @@ export default function POCUpload() {
                     View Invoices
                   </Button>
                 )}
+                {finishedCount === files.length && (
+                  <Button variant="ghost" onClick={clearFiles}>
+                    Clear list
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
+              {/* Batch progress — one glance answers "how far along is my batch of 10?" */}
+              {(activeCount > 0 || finishedCount > 0) && (
+                <div className="mb-4">
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {activeCount > 0 ? "Processing batch" : "Batch complete"}
+                    </span>
+                    <span>{finishedCount} / {files.length}</span>
+                  </div>
+                  <Progress value={batchPercent} className="h-2" />
+                </div>
+              )}
               <div className="space-y-3">
-                {files.map((uploadFile, index) => (
+                {files.map((uploadFile) => (
                   <div
-                    key={index}
+                    key={uploadFile.id}
                     className="flex items-center gap-4 p-3 rounded-lg border bg-card"
                   >
-                    {getStatusIcon(uploadFile.status)}
+                    {getStatusIcon(uploadFile.stage)}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">
                         {uploadFile.file.name}
@@ -366,33 +563,57 @@ export default function POCUpload() {
                         <Badge variant="outline" className="text-xs">
                           {(uploadFile.file.size / 1024).toFixed(0)} KB
                         </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {getStatusLabel(uploadFile.status)}
+                        <span
+                          className={`text-xs ${
+                            uploadFile.stage === "done"
+                              ? "text-success"
+                              : uploadFile.stage === "error"
+                                ? "text-destructive"
+                                : "text-muted-foreground"
+                          }`}
+                        >
+                          {getStatusLabel(uploadFile)}
                         </span>
                         {uploadFile.error && (
-                          <span className="text-xs text-destructive">
+                          <span className="text-xs text-destructive truncate">
                             {uploadFile.error}
                           </span>
                         )}
                       </div>
-                      {(uploadFile.status === "uploading" || uploadFile.status === "processing") && (
+
+                      {/* Sending bytes: a real percentage, so the bar tracks the file. */}
+                      {uploadFile.stage === "uploading" && (
                         <Progress value={uploadFile.progress} className="mt-2 h-1" />
                       )}
+
+                      {/* Worker's turn: no percentage exists, so show motion instead
+                          of a number the server never gave us. */}
+                      {(uploadFile.stage === "queued" || uploadFile.stage === "extracting") && (
+                        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-secondary">
+                          <div className="h-full w-1/4 rounded-full bg-primary animate-indeterminate" />
+                        </div>
+                      )}
                     </div>
-                    {uploadFile.status === "pending" && (
+                    {uploadFile.stage === "pending" && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => removeFile(index)}
+                        onClick={() => removeFile(uploadFile.id)}
                       >
                         <Trash2 className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     )}
-                    {uploadFile.status === "success" && uploadFile.invoiceId && (
+                    {isTerminal(uploadFile.stage) && uploadFile.invoiceId && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => navigate(`/poc/low-confidence/${uploadFile.invoiceId}`)}
+                        onClick={() =>
+                          navigate(
+                            uploadFile.finalStatus === "exception"
+                              ? `/poc/exceptions/${uploadFile.invoiceId}`
+                              : `/poc/low-confidence/${uploadFile.invoiceId}`
+                          )
+                        }
                       >
                         View
                       </Button>
@@ -424,7 +645,7 @@ export default function POCUpload() {
                 {recentUploads.map((inv) => (
                   <div key={inv.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{inv.vendors?.name || "Unknown Vendor"}</p>
+                      <p className="font-medium text-sm">{inv.vendor_name || "Unknown Vendor"}</p>
                       <p className="text-xs text-muted-foreground">{inv.invoice_number} • {inv.currency} {inv.total_amount?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • {new Date(inv.created_at).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })}</p>
                     </div>
                     <div className="flex items-center gap-2">

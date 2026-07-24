@@ -9,6 +9,7 @@
 import './functions/http/auth';
 import './functions/http/me';
 import './functions/http/invoices';
+import './functions/http/attachments';
 import './functions/http/workflow';
 import './functions/http/vendors';
 import './functions/http/users';

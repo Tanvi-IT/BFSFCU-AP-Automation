@@ -304,8 +304,8 @@ const PublicProcessFlow = () => {
             <div className="border border-gray-200 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">Manual Export</h3>
               <p className="text-sm text-gray-600">
-                Administrators can trigger manual exports from the Export History page.
-                Click "Run Manual Export" to process all pending approved invoices.
+                Approvers can export approved invoices to Excel from the Approved
+                page using "Export to Excel".
               </p>
             </div>
 

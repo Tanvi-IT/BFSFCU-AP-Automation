@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { invoicesApi, QUEUE } from "@/services/invoices";
-import { activityApi } from "@/services";
 import { useAuth } from "@/hooks/useAuth";
 import { getReasonLabels } from "@/lib/invoiceReasons";
 import { useToast } from "@/hooks/use-toast";
@@ -89,35 +88,24 @@ export default function LowConfidenceList() {
       const rows = await invoicesApi.list({ status: QUEUE.lowConfidence, limit: 500 });
       const data = rows.map((r) => ({
         ...r,
-        vendors: r.vendor_id
-          ? { id: r.vendor_id, name: r.vendor_name, status: (r as any).vendor_status ?? "active" }
+        // Only a live vendor row can be 'active'; a snapshot name without a
+        // vendor_id means the vendor is not on the approved list.
+        vendors: r.vendor_name
+          ? {
+              id: r.vendor_id ?? "",
+              name: r.vendor_name,
+              status: r.vendor_id ? ((r as any).vendor_status ?? "active") : "unverified",
+            }
           : null,
       }));
 
 
-      // Filter for low confidence invoices with strict queue exclusivity
-      // Tax-flagged invoices ALWAYS appear here regardless of confidence
-      const lowConfidence = (data || []).filter((inv: any) => {
-        const confidenceScore = 1 - (inv.anomaly_score || 0);
-        const vendorVerified = inv.vendors?.status === "active";
-        const hasDuplicate = inv.duplicate_type !== null && inv.duplicate_type !== 'possible_duplicate';
-
-        if (hasDuplicate) return false;
-        if (inv.tax_flagged) return true;
-
-        const hasAchMismatch = inv.variation_flags?.some((f: string) =>
-          ["ach_account_changed", "ach_routing_changed", "ach_new_account_captured"].includes(f)
-        ) ?? false;
-
-        if (hasAchMismatch) return true;
-
-        const qualifiesForHighConfidence = confidenceScore >= HIGH_CONFIDENCE_THRESHOLD && vendorVerified && !hasDuplicate && !hasAchMismatch;
-        if (qualifiesForHighConfidence) return false;
-
-        return confidenceScore < HIGH_CONFIDENCE_THRESHOLD || !vendorVerified || hasAchMismatch;
-      });
-
-      setInvoices(lowConfidence.map((inv: any) => ({
+      // Low Confidence is exactly the `validated` status. The backend routing
+      // already put everything that needs review here, so this page shows the
+      // set as-is — no client-side re-derivation. The old version re-split by
+      // anomaly score and excluded duplicates, which could hide a `validated`
+      // invoice from both queues at once.
+      setInvoices(data.map((inv: any) => ({
         id: inv.id,
         invoice_number: inv.invoice_number,
         total_amount: inv.total_amount,
@@ -188,13 +176,8 @@ export default function LowConfidenceList() {
     a.click();
     URL.revokeObjectURL(url);
 
-    // erp_export_history is part of the ERP subsystem, which is not ported yet.
-    // The export is still recorded, as an audit entry per invoice.
-    await Promise.allSettled(
-      selected.map((i) =>
-        activityApi.addNote(i.id, `Exported to CSV (${selected.length} invoice batch)`)
-      )
-    ).catch(() => undefined);
+    // Exports are deliberately not recorded — no export history table, and no
+    // per-invoice note. Downloading a CSV is a read, not a change to the invoice.
 
     toast({
       title: "Export Complete",

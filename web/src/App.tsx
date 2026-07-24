@@ -16,7 +16,6 @@ import VendorDetail from "./pages/VendorDetail";
 
 // Admin
 import UserManagement from "./pages/poc/UserManagement";
-import ExportHistory from "./pages/ExportHistory";
 import AuditConsole from "./pages/AuditConsole";
 
 // Process documentation
@@ -61,7 +60,6 @@ const App = () => {
             <Route path="/vendors/:id" element={<AuthGate><VendorDetail /></AuthGate>} />
 
             {/* Admin */}
-            <Route path="/exports/history" element={<AuthGate><ExportHistory /></AuthGate>} />
             <Route path="/settings/audit" element={<AuthGate><AuditConsole /></AuthGate>} />
             <Route path="/poc/user-management" element={<AuthGate><UserManagement /></AuthGate>} />
 

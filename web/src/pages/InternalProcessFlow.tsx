@@ -318,8 +318,7 @@ const InternalProcessFlow = () => {
    ├── Group by tenant
    ├── Apply erp_field_mappings
    ├── Generate format (CSV/JSON/XML)
-   ├── Upload to erp-exports bucket
-   └── Insert erp_export_history
+   └── Upload to erp-exports bucket
 
 2. delivery-worker (Cron: every 15 min)
    ├── Query erp_delivery_queue (status='pending')
@@ -377,7 +376,7 @@ const InternalProcessFlow = () => {
               <pre>{`tenants, user_roles, profiles, vendors, invoices, 
 invoice_line_items, invoice_anomalies, vendor_enrichment, 
 vendor_contracts, vendor_baselines, vendor_risk_events,
-erp_export_history, erp_delivery_queue, erp_field_mappings,
+erp_delivery_queue, erp_field_mappings,
 audit_logs, auto_approval_rules, tenant_erp_settings`}</pre>
             </div>
           </section>

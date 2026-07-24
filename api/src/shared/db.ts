@@ -7,9 +7,25 @@
  * Routes must not import this directly — use the repository layer.
  */
 
-import { Pool, type PoolClient, type QueryResultRow } from 'pg';
+import { Pool, types, type PoolClient, type QueryResultRow } from 'pg';
 import { DefaultAzureCredential } from '@azure/identity';
 import { config } from './config';
+
+/**
+ * Return DATE columns as the plain `YYYY-MM-DD` string Postgres stores.
+ *
+ * By default node-postgres turns a DATE into a JavaScript Date at midnight in
+ * the *server's* local timezone, which JSON then serialises as an instant —
+ * `invoice_date` 2026-06-20 left as "2026-06-20T04:00:00.000Z" from a machine
+ * on Eastern time. Two things break: any consumer splitting on "-" to read the
+ * parts gets "20T04:00:00.000Z", and rendering that instant anywhere west of
+ * the server shows the previous day.
+ *
+ * An invoice date and a due date are calendar dates, not moments in time, so
+ * they carry no timezone at all. 1082 is DATE; timestamptz is left alone,
+ * because created_at and approved_at genuinely are instants.
+ */
+types.setTypeParser(1082, (value: string) => value);
 
 /** Scope for Entra authentication against Azure Database for PostgreSQL. */
 const PG_AAD_SCOPE = 'https://ossrdbms-aad.database.windows.net/.default';

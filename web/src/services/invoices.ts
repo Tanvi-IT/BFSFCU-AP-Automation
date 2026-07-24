@@ -28,6 +28,22 @@ export type InvoiceStatus =
   | "exported"
   | "archived";
 
+/**
+ * Statuses the background worker still owns. Anything else is a resting place
+ * the user can act on, so this is what "is it finished yet?" polling watches.
+ */
+const IN_FLIGHT_STATUSES: readonly InvoiceStatus[] = ["ingested", "queued", "processing"];
+
+export const isInFlight = (status: InvoiceStatus) => IN_FLIGHT_STATUSES.includes(status);
+
+/** Response from POST /invoices — the invoice exists, extraction has not run yet. */
+export interface UploadAccepted {
+  invoiceId: string;
+  status: string;
+  duplicate?: boolean;
+  message?: string;
+}
+
 /** Queue definitions, so every queue page filters the same way. */
 export const QUEUE = {
   lowConfidence: "validated",
@@ -101,19 +117,49 @@ export interface Invoice {
   [key: string]: unknown;
 }
 
+/**
+ * Which timestamp a date range filters on. The historical queues each care
+ * about a different one — Approved reads `approved_at`, Declined the
+ * `updated_at` that recorded the decline.
+ */
+export type DateField = "created_at" | "updated_at" | "approved_at";
+
+/** A supplemental document linked to an invoice. */
+export interface Attachment {
+  id: string;
+  invoice_id: string;
+  original_filename: string;
+  content_type: string;
+  bytes: number;
+  uploaded_by_email: string | null;
+  created_at: string;
+}
+
 export interface ListParams {
   status?: InvoiceStatus;
   search?: string;
+  /** Inclusive `YYYY-MM-DD` bounds. Both ends are optional. */
+  dateFrom?: string;
+  dateTo?: string;
+  dateField?: DateField;
   limit?: number;
   offset?: number;
 }
 
 export const invoicesApi = {
+  /**
+   * Search and date filtering are applied server-side, before LIMIT/OFFSET.
+   * Filtering the returned page in the browser instead would only ever search
+   * the rows already loaded — useless on the historical queues, which page.
+   */
   list: (params: ListParams = {}) =>
     api
       .get<{ invoices: Invoice[] }>("/invoices", {
         status: params.status,
         search: params.search,
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo,
+        dateField: params.dateField,
         limit: params.limit ?? 50,
         offset: params.offset ?? 0,
       })
@@ -123,14 +169,45 @@ export const invoicesApi = {
 
   stats: () => api.get<Record<string, number>>("/invoices-stats"),
 
-  /** Upload a document. Returns immediately — processing happens in the background. */
-  upload: (file: File) => {
+  /** Supplemental documents linked to an invoice. */
+  supplemental: {
+    list: (invoiceId: string) =>
+      api
+        .get<{ attachments: Attachment[] }>(`/invoices/${invoiceId}/supplemental`)
+        .then((r) => r.attachments),
+
+    add: (invoiceId: string, file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api.upload<{ attachment: Attachment; supplementalCount: number }>(
+        `/invoices/${invoiceId}/supplemental`,
+        form
+      );
+    },
+
+    /** Short-lived URL for viewing one attachment. */
+    fileUrl: (invoiceId: string, attachmentId: string) =>
+      api
+        .get<{ url: string; filename: string }>(
+          `/invoices/${invoiceId}/supplemental/${attachmentId}/file`
+        )
+        .then((r) => r.url),
+
+    remove: (invoiceId: string, attachmentId: string) =>
+      api.delete<{ ok: boolean }>(`/invoices/${invoiceId}/supplemental/${attachmentId}`),
+  },
+
+  /**
+   * Upload a document. Resolves as soon as the file is stored and queued —
+   * extraction happens in the background worker, so callers that want to show
+   * the invoice reaching a final state must poll `get()` afterwards.
+   *
+   * `onProgress` reports bytes sent, 0–100.
+   */
+  upload: (file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData();
     form.append("file", file);
-    return api.upload<{ invoiceId: string; status: string; duplicate?: boolean; message?: string }>(
-      "/invoices",
-      form
-    );
+    return api.uploadWithProgress<UploadAccepted>("/invoices", form, onProgress);
   },
 
   /** Short-lived URL for viewing the original document. */

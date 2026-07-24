@@ -82,30 +82,25 @@ export default function HighConfidenceQueue() {
   const fetchHighConfidenceInvoices = async () => {
     if (!tenantId) return;
     try {
-      const rows = await invoicesApi.list({ status: QUEUE.lowConfidence, limit: 500 });
+      // High Confidence is exactly the `submitted` status. The backend routing
+      // (api/src/shared/pipeline/routing.ts) already decided an invoice belongs
+      // here — clean, high confidence, active matched vendor, no critical flags.
+      // We do NOT re-derive that client-side: this page used to fetch `validated`
+      // and re-split it by anomaly score, which meant a `submitted` invoice
+      // showed in neither queue.
+      const rows = await invoicesApi.list({ status: QUEUE.highConfidence, limit: 500 });
       const data = rows.map((r) => ({
         ...r,
-        vendors: r.vendor_id
-          ? { id: r.vendor_id, name: r.vendor_name, status: (r as any).vendor_status ?? "active" }
+        vendors: r.vendor_name
+          ? {
+              id: r.vendor_id ?? "",
+              name: r.vendor_name,
+              status: r.vendor_id ? ((r as any).vendor_status ?? "active") : "unverified",
+            }
           : null,
       }));
 
-      // Filter for high confidence invoices that are NOT auto-approved and NOT duplicates
-      // Tax-flagged invoices are excluded (forced to Low Confidence queue)
-      const highConfidence = (data || []).filter((inv: any) => {
-        const confidenceScore = 1 - (inv.anomaly_score || 0);
-        const vendorVerified = inv.vendors?.status === "active";
-        const isAutoApproved = inv.status === "approved" && inv.approved_by === "system";
-        const hasDuplicate = inv.duplicate_type !== null && inv.duplicate_type !== 'possible_duplicate';
-        const hasAchMismatch = inv.variation_flags?.some((f: string) =>
-          ["ach_account_changed", "ach_routing_changed", "ach_new_account_captured"].includes(f)
-        ) ?? false;
-        if (inv.tax_flagged) return false;
-        if (hasAchMismatch) return false;
-        return confidenceScore >= HIGH_CONFIDENCE_THRESHOLD && vendorVerified && !isAutoApproved && !hasDuplicate;
-      });
-
-      setInvoices(highConfidence.map((inv: any) => ({
+      setInvoices(data.map((inv: any) => ({
         id: inv.id,
         invoice_number: inv.invoice_number,
         total_amount: inv.total_amount,

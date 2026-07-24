@@ -1,19 +1,22 @@
 /**
- * Vendor resolution.
+ * Vendor resolution — matching only. This never creates a vendor.
+ *
+ * Vendors enter the system exactly one way: an admin uploads a spreadsheet via
+ * POST /api/vendors/import. Ingest may only match an invoice to a vendor that
+ * already exists in that master list. An invoice whose vendor is not on the
+ * list goes to Exceptions for a human, because silently inventing a payee from
+ * text an OCR model read off a PDF is how a fraudulent invoice becomes a
+ * payable vendor.
  *
  * Strategy order — cheapest and most reliable first:
  *   1. exact tax id
  *   2. exact bank account
  *   3. trigram similarity IN SQL (pg_trgm)
  *   4. Azure OpenAI, only when SQL is inconclusive
- *   5. create a new vendor, pending verification
- *
- * The old implementation loaded every vendor into memory and ran Levenshtein
- * in JavaScript for each invoice. That is replaced by step 3, which uses the
- * gin_trgm index and stays fast as the vendor list grows.
+ *   5. no match — return unmatched
  */
 
-import { query, queryOne, transaction } from '../db';
+import { query, queryOne } from '../db';
 import { resolveVendorName } from '../ai/openai';
 
 export interface VendorMatchInput {
@@ -23,13 +26,19 @@ export interface VendorMatchInput {
 }
 
 export interface ResolvedVendor {
-  id: string;
-  name: string;
-  status: 'pending_verification' | 'active' | 'blocked';
-  /** True when this invoice caused the vendor record to be created. */
-  created: boolean;
-  matchedBy: 'tax_id' | 'bank_account' | 'similarity' | 'ai' | 'created';
+  /** null when nothing in the vendor master matched. */
+  id: string | null;
+  name: string | null;
+  status: 'pending_verification' | 'active' | 'blocked' | null;
+  matchedBy: 'tax_id' | 'bank_account' | 'similarity' | 'ai' | 'unmatched';
 }
+
+const UNMATCHED: ResolvedVendor = {
+  id: null,
+  name: null,
+  status: null,
+  matchedBy: 'unmatched',
+};
 
 interface VendorRow {
   id: string;
@@ -49,7 +58,7 @@ export async function resolveVendor(input: VendorMatchInput): Promise<ResolvedVe
       `SELECT id, name, status FROM vendors WHERE lower(tax_id) = lower($1) LIMIT 1`,
       [input.taxId]
     );
-    if (row) return { ...row, created: false, matchedBy: 'tax_id' };
+    if (row) return { ...row, matchedBy: 'tax_id' };
   }
 
   // 2. Bank account.
@@ -58,13 +67,11 @@ export async function resolveVendor(input: VendorMatchInput): Promise<ResolvedVe
       `SELECT id, name, status FROM vendors WHERE bank_account = $1 LIMIT 1`,
       [input.bankAccount]
     );
-    if (row) return { ...row, created: false, matchedBy: 'bank_account' };
+    if (row) return { ...row, matchedBy: 'bank_account' };
   }
 
   const name = input.name?.trim();
-  if (!name) {
-    return createVendor('Unknown Vendor', input);
-  }
+  if (!name) return UNMATCHED;
 
   // 3. Trigram similarity, computed in the database.
   const candidates = await query<VendorRow & { score: number }>(
@@ -82,7 +89,6 @@ export async function resolveVendor(input: VendorMatchInput): Promise<ResolvedVe
       id: best.id,
       name: best.name,
       status: best.status,
-      created: false,
       matchedBy: 'similarity',
     };
   }
@@ -100,40 +106,12 @@ export async function resolveVendor(input: VendorMatchInput): Promise<ResolvedVe
           id: match.id,
           name: match.name,
           status: match.status,
-          created: false,
           matchedBy: 'ai',
         };
       }
     }
   }
 
-  // 5. No match — create, pending verification.
-  return createVendor(name, input);
-}
-
-async function createVendor(
-  name: string,
-  input: VendorMatchInput
-): Promise<ResolvedVendor> {
-  return transaction(async (client) => {
-    const result = await client.query<VendorRow>(
-      `INSERT INTO vendors (name, tax_id, bank_account, status, source)
-       VALUES ($1, $2, $3, 'pending_verification', 'auto')
-       RETURNING id, name, status`,
-      [name, input.taxId, input.bankAccount]
-    );
-
-    const row = result.rows[0];
-    if (!row) throw new Error('Vendor insert returned no row');
-
-    // Auto-created vendors are audited: a later duplicate vendor can be traced
-    // back to the invoice that created it.
-    await client.query(
-      `INSERT INTO audit_logs (entity_type, entity_id, action, metadata)
-       VALUES ('vendor', $1, 'vendor_created_at_ingest', $2::jsonb)`,
-      [row.id, JSON.stringify({ extractedName: name, taxId: input.taxId })]
-    );
-
-    return { id: row.id, name: row.name, status: row.status, created: true, matchedBy: 'created' as const };
-  });
+  // 5. Not on the vendor master. An admin must import them first.
+  return UNMATCHED;
 }

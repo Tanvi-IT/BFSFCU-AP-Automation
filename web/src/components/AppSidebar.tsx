@@ -11,7 +11,6 @@ import {
   XCircle,
   Upload,
   UserCog,
-  History,
   ShieldCheck,
 } from "lucide-react";
 import {
@@ -43,7 +42,6 @@ const queueNavItems = [
 const adminNavItems: { title: string; url: string; icon: typeof Upload; adminOnly?: boolean }[] = [
   { title: "Upload Invoices", url: "/poc/upload", icon: Upload },
   { title: "Vendors", url: "/vendors", icon: Users },
-  { title: "Export History", url: "/exports/history", icon: History },
   { title: "User Management", url: "/poc/user-management", icon: UserCog, adminOnly: true },
   { title: "Audit", url: "/settings/audit", icon: ShieldCheck, adminOnly: true },
 ];
