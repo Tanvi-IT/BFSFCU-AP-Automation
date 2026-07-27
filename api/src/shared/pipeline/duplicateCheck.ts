@@ -28,6 +28,9 @@ export interface DuplicateInput {
   invoiceId: string;
   /** null when the vendor is not on the master list. */
   vendorId: string | null;
+  /** The vendor name read off the invoice — used to match copies of an
+   *  invoice from a vendor that is not (yet) on the master list. */
+  vendorName: string | null;
   invoiceNumber: string | null;
   totalAmount: number | null;
   invoiceDate: string | null;
@@ -59,20 +62,25 @@ interface PriorRow {
 }
 
 export async function detectDuplicate(input: DuplicateInput): Promise<DuplicateResult> {
-  // Every rule below is scoped to a vendor. With no vendor there is nothing to
-  // compare against, and the invoice is already headed for Exceptions.
-  if (!input.vendorId) return NONE;
+  // Duplicate comparison is scoped to the same vendor — identified by id when
+  // the vendor is on the master list, otherwise by the name captured on the
+  // invoice so re-uploads of an unmatched vendor's invoice still supersede.
+  if (!input.vendorId && !input.vendorName) return NONE;
 
   // ---- hard: same vendor + same invoice number -----------------------------
   if (input.invoiceNumber) {
     const priors = await query<PriorRow>(
       `SELECT id, status, approved_at
          FROM invoices
-        WHERE vendor_id = $1
-          AND invoice_number = $2
+        WHERE invoice_number = $2
           AND id <> $3
+          AND (
+            ($1::uuid IS NOT NULL AND vendor_id = $1::uuid)
+            OR ($1::uuid IS NULL AND $4::text IS NOT NULL
+                AND lower(COALESCE(vendor_name_snapshot, '')) = lower($4))
+          )
         ORDER BY created_at ASC`,
-      [input.vendorId, input.invoiceNumber, input.invoiceId]
+      [input.vendorId, input.invoiceNumber, input.invoiceId, input.vendorName]
     );
 
     if (priors.length > 0) {
@@ -100,7 +108,9 @@ export async function detectDuplicate(input: DuplicateInput): Promise<DuplicateR
   }
 
   // ---- soft: same vendor + same amount, close in time ----------------------
-  if (input.totalAmount !== null && input.invoiceDate) {
+  // Kept to matched vendors: amount alone is too weak to compare across the
+  // whole table by name.
+  if (input.vendorId && input.totalAmount !== null && input.invoiceDate) {
     const soft = await queryOne<{ id: string }>(
       `SELECT id
          FROM invoices

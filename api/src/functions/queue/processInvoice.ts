@@ -106,6 +106,9 @@ app.storageQueue('process-invoice', {
       const duplicate = await detectDuplicate({
         invoiceId: job.invoiceId,
         vendorId: vendor.id,
+        // The name stored on the invoice; lets re-uploads of an unmatched
+        // vendor's invoice still be recognised as duplicates.
+        vendorName: vendor.name ?? vendorName ?? null,
         invoiceNumber,
         totalAmount,
         invoiceDate: normalized?.invoiceDate ?? extracted.invoiceDate,

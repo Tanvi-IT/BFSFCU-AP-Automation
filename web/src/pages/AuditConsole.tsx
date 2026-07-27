@@ -37,7 +37,15 @@ import {
   type DatePreset,
 } from "@/components/DateRangePresetFilter";
 
-const STATUSES = ["queued", "processing", "validated", "submitted", "approved", "declined", "exception"];
+// The meaningful states a reviewer filters on: an invoice awaiting a decision
+// (submitted), one escalated (exception), or one already settled (approved /
+// declined). Intake states (queued/processing/validated) are omitted.
+const STATUSES: { value: string; label: string }[] = [
+  { value: "submitted", label: "Submitted" },
+  { value: "exception", label: "Exception" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Declined" },
+];
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
   if (status === "approved") return "default";
@@ -261,7 +269,7 @@ export default function AuditConsole() {
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
                   {STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
