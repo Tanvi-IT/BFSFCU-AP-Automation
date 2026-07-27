@@ -238,14 +238,21 @@ export default function ExceptionDetail() {
           <AlertTriangle className="h-6 w-6 text-destructive" />
           <div>
             <h1 className="text-2xl font-bold">Exception Review</h1>
-            <p className="text-sm text-muted-foreground">
-              Reason: {getExceptionReasons().map((r, i) => <span key={i} className="font-medium text-destructive mr-2">{r}</span>)}
+            <div className="text-sm text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>Reason:</span>
+                {getExceptionReasons().map((r, i) => (
+                  <Badge key={i} className="rounded-full bg-amber-50 text-amber-700 border border-amber-300">
+                    {r}
+                  </Badge>
+                ))}
+              </div>
               {invoice.checker_comment && invoice.checker_comment !== "Routed to Exceptions for investigation" && (
                 <div className="mt-2 text-sm text-muted-foreground">
                   <span className="font-medium">Investigation Note:</span> {invoice.checker_comment}
                 </div>
               )}
-            </p>
+            </div>
           </div>
         </div>
 
@@ -270,7 +277,10 @@ export default function ExceptionDetail() {
             )}
             {invoice.id && (
               <SupplementalAttachment invoiceId={invoice.id} status={invoice.status}
-                onAttached={() => fetchInvoice(invoice.id)} />
+                onAttached={() => fetchInvoice(invoice.id)}
+                onInvoicePdfUpdated={() =>
+                  invoicesApi.fileUrl(invoice.id).then(setPdfUrl).catch(() => setPdfUrl(null))
+                } />
             )}
           </div>
 

@@ -5,14 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { invoicesApi, QUEUE } from "@/services/invoices";
 import { useAuth } from "@/hooks/useAuth";
 import { getReasonLabels } from "@/lib/invoiceReasons";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertTriangle, Eye, Download, Search } from "lucide-react";
-import { format } from "date-fns";
+import { Loader2, AlertTriangle, Eye, Search } from "lucide-react";
 import { HIGH_CONFIDENCE_THRESHOLD } from "@/lib/pocConfig";
 import { ConfidenceBadge, anomalyToConfidence } from "@/components/ConfidenceBadge";
 import { displayInvoiceNumber } from "@/lib/utils";
@@ -40,18 +38,15 @@ interface InvoiceWithVendor {
 
 export default function LowConfidenceList() {
   const navigate = useNavigate();
-  const { tenantId, isAdmin, isSuperAdmin, user } = useAuth();
+  const { tenantId } = useAuth();
   const { toast } = useToast();
   const [invoices, setInvoices] = useState<InvoiceWithVendor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // Inline GL editing
   const [editingGLId, setEditingGLId] = useState<string | null>(null);
   const [editingGLValue, setEditingGLValue] = useState("");
-
-  const canExport = isAdmin || isSuperAdmin;
 
   // Filter invoices based on search term
   const filteredInvoices = useMemo(() => {
@@ -132,61 +127,6 @@ export default function LowConfidenceList() {
     return getReasonLabels(invoice);
   };
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === invoices.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(invoices.map((i) => i.id)));
-    }
-  };
-
-  const exportSelectedToCSV = async () => {
-    const selected = invoices.filter((i) => selectedIds.has(i.id));
-    if (selected.length === 0) return;
-
-    const headers = ["Invoice #", "Vendor", "Amount", "Currency", "Received", "Confidence", "Status"];
-    const rows = selected.map((inv) => [
-      inv.invoice_number,
-      inv.vendor?.name || "Unknown",
-      inv.total_amount.toString(),
-      inv.currency,
-      new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(inv.created_at)),
-      `${anomalyToConfidence(inv.anomaly_score)}%`,
-      inv.status,
-    ]);
-
-    const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${c}"`).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `low-confidence-invoices-${format(new Date(), "yyyy-MM-dd")}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    // Exports are deliberately not recorded — no export history table, and no
-    // per-invoice note. Downloading a CSV is a read, not a change to the invoice.
-
-    toast({
-      title: "Export Complete",
-      description: `${selected.length} invoice(s) exported to CSV.`,
-    });
-
-    setSelectedIds(new Set());
-  };
-
   const handleGLSave = async (invoiceId: string, newGLValue: string) => {
     try {
       await invoicesApi.update(invoiceId, { glCode: newGLValue.trim() });
@@ -246,12 +186,6 @@ export default function LowConfidenceList() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Requires Review ({filteredInvoices.length})</CardTitle>
-            {canExport && selectedIds.size > 0 && (
-              <Button onClick={exportSelectedToCSV} size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Export Selected ({selectedIds.size})
-              </Button>
-            )}
           </CardHeader>
           <CardContent className="p-0">
             {isLoading ? (
@@ -267,14 +201,6 @@ export default function LowConfidenceList() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {canExport && (
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedIds.size === filteredInvoices.length && filteredInvoices.length > 0}
-                          onCheckedChange={toggleSelectAll}
-                        />
-                      </TableHead>
-                    )}
                     <TableHead>Vendor</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Invoice #</TableHead>
@@ -292,14 +218,6 @@ export default function LowConfidenceList() {
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => navigate(`/poc/low-confidence/${invoice.id}`)}
                     >
-                      {canExport && (
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={selectedIds.has(invoice.id)}
-                            onCheckedChange={() => toggleSelect(invoice.id)}
-                          />
-                        </TableCell>
-                      )}
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
                           <span>{invoice.vendor?.name || "Unknown"}</span>

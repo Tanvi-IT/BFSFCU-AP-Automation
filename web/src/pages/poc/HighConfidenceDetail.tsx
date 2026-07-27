@@ -563,6 +563,7 @@ export default function HighConfidenceDetail() {
                 status={currentInvoice.status}
                 supplementalCount={currentInvoice.supplemental_pdf_count}
                 onAttached={fetchHighConfidenceInvoices}
+                onInvoicePdfUpdated={fetchPdfUrl}
               />
             </CardContent>
           </Card>

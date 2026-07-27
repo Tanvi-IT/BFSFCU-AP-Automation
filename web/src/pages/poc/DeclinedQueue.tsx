@@ -6,7 +6,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { DateRangeFilter, EMPTY_DATE_RANGE, type DateRange } from "@/components/DateRangeFilter";
+import {
+  DateRangePresetFilter,
+  presetToRange,
+  DEFAULT_DATE_PRESET,
+  type DatePreset,
+} from "@/components/DateRangePresetFilter";
 import { invoicesApi, QUEUE } from "@/services/invoices";
 import { Loader2, XCircle, Eye, Building2, Search } from "lucide-react";
 import { format } from "date-fns";
@@ -32,7 +37,8 @@ export default function DeclinedQueue() {
   const [invoices, setInvoices] = useState<DeclinedInvoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateRange, setDateRange] = useState<DateRange>(EMPTY_DATE_RANGE);
+  const [datePreset, setDatePreset] = useState<DatePreset>(DEFAULT_DATE_PRESET);
+  const dateRange = presetToRange(datePreset);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
@@ -70,6 +76,7 @@ export default function DeclinedQueue() {
         limit: PAGE_SIZE,
         offset: pageNum * PAGE_SIZE,
         dateField: "updated_at",
+        order: "asc",
         ...(appliedSearch ? { search: appliedSearch } : {}),
         ...(dateRange.from ? { dateFrom: dateRange.from } : {}),
         ...(dateRange.to ? { dateTo: dateRange.to } : {}),
@@ -125,7 +132,7 @@ export default function DeclinedQueue() {
               className="pl-9"
             />
           </div>
-          <DateRangeFilter value={dateRange} onChange={setDateRange} label="Declined" />
+          <DateRangePresetFilter value={datePreset} onChange={setDatePreset} label="Declined" />
         </div>
 
         <Card>

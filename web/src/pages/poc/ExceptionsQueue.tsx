@@ -283,14 +283,18 @@ export default function ExceptionsQueue() {
                         {new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "2-digit", year: "numeric" }).format(new Date(invoice.created_at))}
                       </TableCell>
                       <TableCell>
-                        {invoice.bad_file_flag && (
-                          <span style={{ backgroundColor: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5', borderRadius: '12px', padding: '2px 10px', fontSize: '12px', fontWeight: 500, marginRight: '4px' }}>
-                            BAD FILE
-                          </span>
-                        )}
-                        <Badge variant="outline" className="text-xs">
-                          {getExceptionReasons(invoice).map((r, i) => <Badge key={i} className="text-xs mr-1 bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-50">{r}</Badge>)}
-                        </Badge>
+                        <div className="flex flex-wrap gap-1 max-w-[280px]">
+                          {invoice.bad_file_flag && (
+                            <span style={{ backgroundColor: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5', borderRadius: '12px', padding: '2px 10px', fontSize: '12px', fontWeight: 500, marginRight: '4px' }}>
+                              BAD FILE
+                            </span>
+                          )}
+                          {getExceptionReasons(invoice).map((r, i) => (
+                            <Badge key={i} className="text-xs bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-50">
+                              {r}
+                            </Badge>
+                          ))}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
