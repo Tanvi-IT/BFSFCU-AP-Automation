@@ -149,7 +149,9 @@ export async function analyzeInvoice(file: Buffer): Promise<ExtractedInvoice> {
       const f = doc.fields;
       const subtotal = num(f['SubTotal']);
       const tax = num(f['TotalTax']);
-      const total = num(f['InvoiceTotal']);
+      // "Amount Due" / "Balance Due" carries the payable figure when a document
+      // has no explicit "Invoice Total" line.
+      const total = num(f['InvoiceTotal']) ?? num(f['AmountDue']);
       const lineItems = mapLineItems(f['Items']);
 
       // Fall back through subtotal+tax, then line-item sum, before giving up.

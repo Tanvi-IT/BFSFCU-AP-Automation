@@ -221,4 +221,3 @@ export const usersApi = {
   update: (id: string, fields: { role?: AppRole; isActive?: boolean; password?: string }) =>
     api.patch<ManagedUser>(`/users/${id}`, fields),
 };
-export * from "./settings";

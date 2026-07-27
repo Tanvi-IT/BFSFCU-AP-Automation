@@ -12,7 +12,6 @@ import { getReasonLabels } from "@/lib/invoiceReasons";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, AlertTriangle, Eye, Search } from "lucide-react";
 import { HIGH_CONFIDENCE_THRESHOLD } from "@/lib/pocConfig";
-import { ConfidenceBadge, anomalyToConfidence } from "@/components/ConfidenceBadge";
 import { displayInvoiceNumber } from "@/lib/utils";
 
 interface InvoiceWithVendor {
@@ -206,7 +205,6 @@ export default function LowConfidenceList() {
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Received</TableHead>
                     <TableHead>GL (Approver)</TableHead>
-                    <TableHead>Confidence</TableHead>
                     <TableHead>Reason(s)</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
@@ -259,12 +257,6 @@ export default function LowConfidenceList() {
                             {invoice.gl_code || "—"}
                           </button>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <ConfidenceBadge 
-                          score={anomalyToConfidence(invoice.anomaly_score)} 
-                          showLabel={false} 
-                        />
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1 max-w-[280px]">

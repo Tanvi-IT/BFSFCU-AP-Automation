@@ -49,10 +49,13 @@ const HEADER_MAP: Record<string, keyof vendors.VendorImportRow> = {
   bankroutingnumber: 'achRoutingNumber',
   routingnumber: 'achRoutingNumber',
   achroutingnumber: 'achRoutingNumber',
+  achrouting: 'achRoutingNumber',
+  routing: 'achRoutingNumber',
   aba: 'achRoutingNumber',
   bankaccountnumber: 'achAccountNumber',
   accountnumber: 'achAccountNumber',
   achaccountnumber: 'achAccountNumber',
+  achaccount: 'achAccountNumber',
   // No 'status' mapping: every imported vendor is set active, so a status
   // column in the file would be read and then ignored, which is worse than
   // not reading it.

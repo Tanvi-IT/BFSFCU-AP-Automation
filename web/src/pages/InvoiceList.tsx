@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge, RiskBadge } from "@/components/StatusBadge";
 import { VariationBadge } from "@/components/VariationBadge";
-import { ERPExportButton } from "@/components/ERPExportButton";
 import { invoicesApi } from "@/services/invoices";
 import {
   DateRangePresetFilter,
@@ -24,7 +23,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { CanonicalInvoice, InvoiceStatus, RiskLevel } from "@/types/invoice";
-import { Loader2, Upload, Search, Eye, CheckSquare, FileText, Download, Mail, HardDriveUpload, Zap } from "lucide-react";
+import { Loader2, Upload, Search, Eye, CheckSquare, FileText, Mail, HardDriveUpload, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const SourceBadge = ({ source }: { source?: string | null }) => {
@@ -106,7 +105,6 @@ const InvoiceList = () => {
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
-  const [isExportingProlouge, setIsExportingProlouge] = useState(false);
   
   // Invoice preview state
   const [previewInvoice, setPreviewInvoice] = useState<InvoiceWithVariation | null>(null);
@@ -387,35 +385,6 @@ const InvoiceList = () => {
     inv => inv.status === 'submitted' || inv.status === 'validated'
   );
 
-  const approvedFilteredInvoices = filteredInvoices.filter(inv => inv.status === 'approved');
-
-
-  const handlePrologueExport = async () => {
-    if (approvedFilteredInvoices.length === 0) {
-      toast({ variant: "destructive", title: "Nothing to export", description: "No approved invoices in the current filter." });
-      return;
-    }
-    setIsExportingProlouge(true);
-    try {
-      // Export is generated server-side; the API client attaches the token.
-      const blob = await api.blob('/exports/prologue', {
-        invoiceIds: approvedFilteredInvoices.map((i) => i.id).join(','),
-      });
-      const count = String(approvedFilteredInvoices.length);
-      const dl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = dl;
-      a.download = `BFSFCU_Prologue_Export_${new Date().toISOString().split("T")[0]}.xlsx`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(dl);
-      toast({ title: "Export complete", description: `${count} invoice(s) included` });
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Export failed", description: e.message ?? "Unknown error" });
-    } finally {
-      setIsExportingProlouge(false);
-    }
-  };
-
   return (
     <Layout>
       <div className="space-y-6">
@@ -433,11 +402,6 @@ const InvoiceList = () => {
                 Approve Selected ({selectedInvoices.size})
               </Button>
             )}
-            <Button onClick={handlePrologueExport} disabled={isExportingProlouge} variant="outline" className="flex items-center gap-2">
-              {isExportingProlouge ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Export to Excel
-            </Button>
-
           </div>
         </div>
 
@@ -543,7 +507,6 @@ const InvoiceList = () => {
                     <TableHead>Invoice Date</TableHead>
                     <TableHead>Approved Date</TableHead>
                     <TableHead>Transaction Date</TableHead>
-                    <TableHead>Sanitized Filename</TableHead>
                     <TableHead>ACH Routing #</TableHead>
                     <TableHead>ACH Account #</TableHead>
                   </TableRow>
@@ -561,7 +524,6 @@ const InvoiceList = () => {
                       <TableCell>{formatDateOnly(invoice.invoiceDate)}</TableCell>
                       <TableCell>{invoice.approvedAt ? format(new Date(invoice.approvedAt), 'MMM dd, yyyy') : '—'}</TableCell>
                       <TableCell>{formatDateOnly(invoice.transactionDate)}</TableCell>
-                      <TableCell className="font-mono text-xs">{invoice.sanitizedFilename || '—'}</TableCell>
                       <TableCell className="font-mono text-xs">{invoice.achRoutingNumber || '—'}</TableCell>
                       <TableCell className="font-mono text-xs">{invoice.achAccountNumber || '—'}</TableCell>
                     </TableRow>
@@ -656,13 +618,6 @@ const InvoiceList = () => {
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <ERPExportButton
-                              invoiceId={invoice.id}
-                              tenantId={invoice.tenantId}
-                              invoiceNumber={invoice.invoiceNumber}
-                              variant="ghost"
-                              size="sm"
-                            />
                             <Button
                               variant="ghost"
                               size="sm"

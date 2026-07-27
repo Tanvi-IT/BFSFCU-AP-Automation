@@ -169,6 +169,10 @@ app.storageQueue('process-invoice', {
         subtotalAmount,
         taxAmount,
         totalAmount,
+        // ACH read off the document by stage 2; persist.ts falls back to the
+        // matched vendor's details when the document has none.
+        achRoutingNumber: normalized?.achRoutingNumber ?? null,
+        achAccountNumber: normalized?.achAccountNumber ?? null,
         lineItems: extracted.lineItems,
         status: routing.status,
         riskLevel: routing.riskLevel,

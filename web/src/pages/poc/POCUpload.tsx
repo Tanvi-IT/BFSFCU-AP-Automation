@@ -62,6 +62,14 @@ interface UploadFile {
 /** How many files upload at once. Enough to be fast, few enough that each bar moves visibly. */
 const UPLOAD_CONCURRENCY = 3;
 
+/**
+ * Cap on files per batch. Each upload becomes a queued job the worker runs
+ * through Document Intelligence + the language model; too many in flight at
+ * once starves the worker/DB pool and later jobs appear to hang. Keep batches
+ * small — submit these, then add more.
+ */
+const MAX_BATCH = 10;
+
 /** How often to ask the API whether the worker has finished a queued invoice. */
 const POLL_INTERVAL_MS = 2500;
 
@@ -153,13 +161,32 @@ export default function POCUpload() {
   };
 
   const addFiles = (newFiles: File[]) => {
-    const uploadFiles: UploadFile[] = newFiles.map((file) => ({
+    const available = MAX_BATCH - files.length;
+    if (available <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Upload limit reached",
+        description: `Upload up to ${MAX_BATCH} files at a time. Submit these, then add more.`,
+      });
+      return;
+    }
+    const accepted = newFiles.slice(0, available);
+    const dropped = newFiles.length - accepted.length;
+
+    const uploadFiles: UploadFile[] = accepted.map((file) => ({
       id: `f${nextFileId++}`,
       file,
       stage: "pending",
       progress: 0,
     }));
     setFiles((prev) => [...prev, ...uploadFiles]);
+
+    if (dropped > 0) {
+      toast({
+        title: `Only ${MAX_BATCH} at a time`,
+        description: `${dropped} file(s) weren't added. Upload up to ${MAX_BATCH} at once to keep processing reliable.`,
+      });
+    }
   };
 
   const removeFile = (id: string) => {
@@ -455,7 +482,8 @@ export default function POCUpload() {
           <CardHeader>
             <CardTitle>Select Files</CardTitle>
             <CardDescription>
-              Drag and drop files or click to browse. Supported: PDF, PNG, JPG
+              Drag and drop files or click to browse. Supported: PDF, PNG, JPG.
+              {" "}Upload up to {MAX_BATCH} invoices at a time — submit these, then add more.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -12,7 +12,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Eye, Search } from "lucide-react";
 import { format } from "date-fns";
 import { HIGH_CONFIDENCE_THRESHOLD } from "@/lib/pocConfig";
-import { ConfidenceBadge, anomalyToConfidence } from "@/components/ConfidenceBadge";
 import { displayInvoiceNumber } from "@/lib/utils";
 
 interface InvoiceWithVendor {
@@ -277,7 +276,6 @@ export default function HighConfidenceQueue() {
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Received</TableHead>
                     <TableHead>GL (Approver)</TableHead>
-                    <TableHead>Confidence</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -330,12 +328,6 @@ export default function HighConfidenceQueue() {
                             {invoice.gl_code || "—"}
                           </button>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <ConfidenceBadge 
-                          score={anomalyToConfidence(invoice.anomaly_score)} 
-                          showLabel={false} 
-                        />
                       </TableCell>
                       <TableCell>
                         <Button

@@ -710,6 +710,25 @@ export default function HighConfidenceDetail() {
                     )}
                   </div>
                 </div>
+                {/* ACH routing/account — editable in Edit mode. Ordered so both
+                    ACH fields land in the LEFT column (Due Date sits between
+                    them on the right), matching the Low Confidence detail. */}
+                <div className="flex items-start gap-2">
+                  <Landmark className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex-1">
+                    <p className="text-xs text-muted-foreground">ACH Routing #</p>
+                    {isFieldEditing ? (
+                      <Input
+                        value={editAchRouting}
+                        onChange={(e) => setEditAchRouting(e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="9-digit routing number"
+                      />
+                    ) : (
+                      <p className="font-medium text-sm font-mono">{currentInvoice?.ach_routing_number || '—'}</p>
+                    )}
+                  </div>
+                </div>
                 <div className="flex items-start gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <div className="flex-1">
@@ -733,26 +752,6 @@ export default function HighConfidenceDetail() {
                         </Badge>
                       )}
                     </div>
-                  </div>
-                </div>
-                {/* ACH routing/account — editable when in Edit mode, matching
-                    the Low Confidence detail. Kept here in the main details grid
-                    (above the Assignment panel and Save button) so a reviewer
-                    edits them as part of the invoice fields, not below Save. */}
-                <div className="flex items-start gap-2">
-                  <Landmark className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex-1">
-                    <p className="text-xs text-muted-foreground">ACH Routing #</p>
-                    {isFieldEditing ? (
-                      <Input
-                        value={editAchRouting}
-                        onChange={(e) => setEditAchRouting(e.target.value)}
-                        className="h-7 text-sm font-mono"
-                        placeholder="9-digit routing number"
-                      />
-                    ) : (
-                      <p className="font-medium text-sm font-mono">{currentInvoice?.ach_routing_number || '—'}</p>
-                    )}
                   </div>
                 </div>
                 <div className="flex items-start gap-2">

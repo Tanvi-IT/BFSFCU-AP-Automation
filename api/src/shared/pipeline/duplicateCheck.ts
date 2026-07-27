@@ -1,24 +1,19 @@
 /**
  * Duplicate detection.
  *
- * File-level duplicates are already impossible: `invoices.file_hash` is unique,
- * so the same bytes are rejected at upload. What remains is:
+ * Duplicate uploads are allowed (file_hash is no longer unique — see migration
+ * 0014), so re-uploading the same document produces a new invoice that this
+ * check then routes. Duplicates are recognised by:
  *
  *   hard  — same vendor + same invoice number
  *   soft  — same vendor + same amount within 48 hours (a weaker signal)
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * PENDING PRODUCT DECISION — do not change without sign-off.
- *
- * The requested rule is "the newest upload always wins: it goes to LC/HC and
- * every earlier copy moves to Exceptions". That is implemented here for copies
- * that are still in review.
- *
- * It is deliberately NOT applied when an earlier copy is already APPROVED,
- * because that copy may already have been paid or exported, and superseding it
- * would silently reverse an approval. In that case the NEW upload goes to
- * Exceptions instead. Flip `SUPERSEDE_APPROVED` only after an explicit decision.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Active policy (newest-wins, approval-safe):
+ *   - If an earlier copy is still in review (low/high confidence), the newest
+ *     upload takes its place and every earlier copy is superseded to Exceptions.
+ *   - If an earlier copy is already APPROVED, the approval stands and the NEW
+ *     upload goes to Exceptions instead — an approval (possibly already paid or
+ *     exported) is never silently reversed. `SUPERSEDE_APPROVED` guards this.
  */
 
 import { query, queryOne } from '../db';

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { invoicesApi } from "@/services/invoices";
+import { invoicesApi, QUEUE } from "@/services/invoices";
+import { getReasonLabels } from "@/lib/invoiceReasons";
 import { useAuth } from "@/hooks/useAuth";
 import {
   CheckCircle2,
@@ -14,7 +15,6 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
-import { HIGH_CONFIDENCE_THRESHOLD } from "@/lib/pocConfig";
 
 interface DashboardStats {
   highConfidence: number;
@@ -51,94 +51,61 @@ export default function POCDashboard() {
   const fetchDashboardData = async () => {
     if (!tenantId) return;
     try {
-      // Fetch all invoices for stats
-      // All invoices, ordered oldest first (the dashboard computes queue ages).
-      const rows = await invoicesApi.list({ limit: 1000 });
-      const invoices = [...rows]
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-        .map((r) => ({
-          ...r,
-          vendors: { status: (r as any).vendor_status ?? "active" },
-        }));
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+        now.getDate()
+      ).padStart(2, "0")}`;
 
+      // Counts come from the exact GROUP BY status aggregate — the SAME status
+      // column each queue page filters on — so the tiles always agree with the
+      // queues. Oldest-age and today's approvals need row data, fetched with
+      // small targeted queries (oldest-first, or filtered to today).
+      const [counts, oldestHigh, lowRows, oldestExc, approvedToday] = await Promise.all([
+        invoicesApi.stats(),
+        invoicesApi.list({ status: QUEUE.highConfidence, order: "asc", limit: 1 }),
+        invoicesApi.list({ status: QUEUE.lowConfidence, order: "asc", limit: 500 }),
+        invoicesApi.list({ status: QUEUE.exceptions, order: "asc", limit: 1 }),
+        invoicesApi.list({
+          status: "approved" as any,
+          dateField: "approved_at",
+          dateFrom: todayStr,
+          dateTo: todayStr,
+          limit: 200,
+        }),
+      ]);
 
-      let highConf = 0;
-      let lowConf = 0;
-      let exceptions = 0;
-      let declined = 0;
-      let dailyApprovals = 0;
-      let oldestHighConfidence: string | null = null;
-      let oldestLowConfidence: string | null = null;
-      let oldestException: string | null = null;
+      // Top low-confidence reasons — the same labels the Low-Confidence queue
+      // shows, so the two are consistent. Map vendor the way that queue does.
       const reasonCounts: Record<string, number> = {};
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      (invoices || []).forEach((inv: any) => {
-        if (inv.status === "rejected") {
-          declined++;
-        } else if (inv.status === "exception") {
-          exceptions++;
-          if (!oldestException) oldestException = inv.created_at;
-        } else if (inv.status === "approved") {
-          // Count daily approvals
-          if (inv.approved_at) {
-            const approvedDate = new Date(inv.approved_at);
-            approvedDate.setHours(0, 0, 0, 0);
-            if (approvedDate.getTime() === today.getTime()) {
-              dailyApprovals++;
-            }
-          }
-        } else if (inv.status === "validated") {
-          const confidenceScore = 1 - (inv.anomaly_score || 0);
-          const vendorVerified = inv.vendors?.status === "active";
-          const hasDuplicate = inv.duplicate_type !== null && inv.duplicate_type !== 'possible_duplicate';
-          
-          // High Confidence = confidence >= threshold AND vendor verified AND no duplicates
-          // NOTE: Anomalies (variation_flags) do NOT disqualify from High Confidence
-          const hasAchMismatch = inv.variation_flags?.some((f: string) =>
-            ["ach_account_changed", "ach_routing_changed", "ach_new_account_captured"].includes(f)
-          ) ?? false;
-          const qualifiesForHighConfidence = confidenceScore >= HIGH_CONFIDENCE_THRESHOLD && vendorVerified && !hasDuplicate && !inv.tax_flagged && !hasAchMismatch;
-          
-          if (qualifiesForHighConfidence) {
-            highConf++;
-            if (!oldestHighConfidence) oldestHighConfidence = inv.created_at;
-          } else {
-            // Low Confidence = NOT high confidence (low score OR unverified vendor OR tax flagged)
-            // Duplicates go to Exceptions, handled by status='exception'
-            if (!hasDuplicate) {
-              lowConf++;
-              if (!oldestLowConfidence) oldestLowConfidence = inv.created_at;
-              
-              // Track reasons
-              if (confidenceScore < HIGH_CONFIDENCE_THRESHOLD) {
-                reasonCounts["Low confidence score"] = (reasonCounts["Low confidence score"] || 0) + 1;
+      lowRows.forEach((r) => {
+        const inv = {
+          ...r,
+          vendor: r.vendor_name
+            ? {
+                id: r.vendor_id ?? "",
+                name: r.vendor_name,
+                status: r.vendor_id ? ((r as any).vendor_status ?? "active") : "unverified",
               }
-              if (!vendorVerified) {
-                reasonCounts["Vendor not verified"] = (reasonCounts["Vendor not verified"] || 0) + 1;
-              }
-            }
-          }
-        }
+            : null,
+        };
+        getReasonLabels(inv as any).forEach((reason) => {
+          reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+        });
       });
-
-      // Get top 5 reasons
       const topReasons = Object.entries(reasonCounts)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
         .map(([reason, count]) => ({ reason, count }));
 
       setStats({
-        highConfidence: highConf,
-        lowConfidence: lowConf,
-        exceptions,
-        declined,
-        dailyApprovals,
-        oldestHighConfidence,
-        oldestLowConfidence,
-        oldestException,
+        highConfidence: counts[QUEUE.highConfidence] ?? 0,
+        lowConfidence: counts[QUEUE.lowConfidence] ?? 0,
+        exceptions: counts[QUEUE.exceptions] ?? 0,
+        declined: counts[QUEUE.declined] ?? 0,
+        dailyApprovals: approvedToday.length,
+        oldestHighConfidence: oldestHigh[0]?.created_at ?? null,
+        oldestLowConfidence: lowRows[0]?.created_at ?? null,
+        oldestException: oldestExc[0]?.created_at ?? null,
         topLowConfidenceReasons: topReasons,
       });
     } catch (error) {

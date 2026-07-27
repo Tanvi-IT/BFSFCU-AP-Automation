@@ -62,12 +62,19 @@ export function routeInvoice(input: RoutingInput): RoutingResult {
   const flags = [...seen];
   const hasCritical = flags.some((f) => CRITICAL_FLAGS.has(f));
 
-  // High-risk reasons still land in a review queue — Low Confidence — rather
+  // A duplicate of an already-APPROVED invoice cannot supersede that approval
+  // (it may already be paid/exported), so the new upload goes straight to
+  // Exceptions for a human to reconcile. This is the one place automatic
+  // routing selects Exception, by product rule.
+  if (input.duplicate.blockNew) {
+    return { status: 'exception', riskLevel: 'high', flags };
+  }
+
+  // Other high-risk reasons land in a review queue — Low Confidence — rather
   // than being sent straight to Exception. A reviewer decides from there.
-  //   - a duplicate the system would have blocked
   //   - a critical flag (bad file, non-invoice, bank/tax mismatch)
   //   - a vendor that is not on the approved master list
-  if (input.duplicate.blockNew || hasCritical || input.vendorUnmatched) {
+  if (hasCritical || input.vendorUnmatched) {
     return { status: 'validated', riskLevel: 'high', flags };
   }
 

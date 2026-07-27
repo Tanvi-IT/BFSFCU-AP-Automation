@@ -36,6 +36,8 @@ export interface NormalizedInvoice {
   vendorName: string | null;
   vendorTaxId: string | null;
   poNumber: string | null;
+  achRoutingNumber: string | null;
+  achAccountNumber: string | null;
   confidence: number;
   flags: string[];
 }
@@ -87,6 +89,8 @@ const RESPONSE_SCHEMA = {
     'vendor_name',
     'vendor_tax_id',
     'po_number',
+    'ach_routing_number',
+    'ach_account_number',
     'confidence',
     'flags',
   ],
@@ -101,6 +105,14 @@ const RESPONSE_SCHEMA = {
     vendor_name: { type: ['string', 'null'] },
     vendor_tax_id: { type: ['string', 'null'] },
     po_number: { type: ['string', 'null'] },
+    ach_routing_number: {
+      type: ['string', 'null'],
+      description: 'Bank routing / ABA number from the payment details, digits only',
+    },
+    ach_account_number: {
+      type: ['string', 'null'],
+      description: 'Bank account number from the payment details',
+    },
     confidence: { type: 'number', description: '0 to 1' },
     flags: { type: 'array', items: { type: 'string', enum: FLAG_VALUES } },
   },
@@ -124,11 +136,18 @@ Rules:
 6. Amounts are plain numbers: no currency symbol, no thousands separator, a dot
    as the decimal mark, at most 2 decimals. currency is an uppercase ISO-4217
    code; use USD when the document does not state one.
-7. subtotal_amount + tax_amount should equal total_amount. If they do not, keep
-   the values as printed and add "total_mismatch" — never adjust a figure to
-   make it balance.
-8. confidence is your own certainty in the whole record, from 0 to 1.
-9. Never invent a value. If a field is not clearly present, return null.
+7. total_amount is the amount payable — the "Total", "Balance Due", "Amount Due"
+   or "Amount Payable" printed on the document. Always capture it when present.
+8. Only add "total_mismatch" when subtotal_amount, tax_amount AND total_amount
+   are ALL printed on the document as separate figures and subtotal + tax
+   differs from total by more than 0.01. A document that shows only a single
+   total / balance due with no separate subtotal line is NORMAL — never add
+   "total_mismatch" in that case, and never adjust a figure to make it balance.
+9. ach_routing_number and ach_account_number: if the document has bank / ACH /
+   remittance payment details, copy the routing (ABA, usually 9 digits) and the
+   account number exactly as printed (digits only, no spaces). Otherwise null.
+10. confidence is your own certainty in the whole record, from 0 to 1.
+11. Never invent a value. If a field is not clearly present, return null.
    For a regulated financial document, null is always better than a guess.
    Do not substitute an empty string, "N/A", or 0 for a missing value.`;
 
@@ -257,17 +276,34 @@ function canonicalize(parsed: Record<string, unknown>): NormalizedInvoice {
     ? Math.min(1, Math.max(0, confidenceRaw))
     : 0;
 
+  const subtotalAmount = asAmount(parsed['subtotal_amount']);
+  const taxAmount = asAmount(parsed['tax_amount']);
+  const totalAmount = asAmount(parsed['total_amount']);
+
+  // total_mismatch is only meaningful when all three figures are printed. An
+  // invoice that states just a total / balance due (no separate subtotal) is
+  // not a mismatch — strip the flag the model over-eagerly attaches so it never
+  // becomes a false review reason.
+  if (flags.has('total_mismatch')) {
+    const allPresent = subtotalAmount !== null && taxAmount !== null && totalAmount !== null;
+    if (!allPresent || Math.abs(subtotalAmount! + taxAmount! - totalAmount!) <= 0.01) {
+      flags.delete('total_mismatch');
+    }
+  }
+
   return {
     invoiceNumber: asText(parsed['invoice_number']),
     invoiceDate,
     dueDate,
     currency,
-    subtotalAmount: asAmount(parsed['subtotal_amount']),
-    taxAmount: asAmount(parsed['tax_amount']),
-    totalAmount: asAmount(parsed['total_amount']),
+    subtotalAmount,
+    taxAmount,
+    totalAmount,
     vendorName: asText(parsed['vendor_name']),
     vendorTaxId: asText(parsed['vendor_tax_id']),
     poNumber: asText(parsed['po_number']),
+    achRoutingNumber: asText(parsed['ach_routing_number']),
+    achAccountNumber: asText(parsed['ach_account_number']),
     confidence,
     flags: [...flags],
   };

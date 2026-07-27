@@ -30,6 +30,9 @@ export interface PersistInput {
   subtotalAmount: number | null;
   taxAmount: number | null;
   totalAmount: number;
+  /** ACH details read off the document itself; preferred over the vendor's. */
+  achRoutingNumber: string | null;
+  achAccountNumber: string | null;
   lineItems: ExtractedLineItem[];
   status: 'validated' | 'submitted' | 'exception';
   riskLevel: 'low' | 'medium' | 'high';
@@ -79,11 +82,11 @@ export async function saveProcessedInvoice(input: PersistInput): Promise<void> {
               tax_flag_reason   = $20,
               extraction_provider     = $23,
               reasoning_provider      = $24,
-              -- Carry the matched vendor's bank details onto the invoice so the
-              -- review screens and the export show where payment will go. Null
-              -- when no vendor matched.
-              ach_routing_number = (SELECT ach_routing_number FROM vendors WHERE id = $2),
-              ach_account_number = (SELECT ach_account_number FROM vendors WHERE id = $2),
+              -- ACH details: prefer what was read off the document itself, then
+              -- fall back to the matched vendor's stored bank details. Null only
+              -- when neither the document nor a matched vendor has them.
+              ach_routing_number = COALESCE($25, (SELECT ach_routing_number FROM vendors WHERE id = $2)),
+              ach_account_number = COALESCE($26, (SELECT ach_account_number FROM vendors WHERE id = $2)),
               -- Never auto-routed to approval out of the pipeline; a human moves
               -- it forward from a queue.
               auto_routed       = false,
@@ -114,6 +117,8 @@ export async function saveProcessedInvoice(input: PersistInput): Promise<void> {
         input.dueDateDefaultSource,
         input.extractionProvider,
         input.reasoningProvider,
+        input.achRoutingNumber,
+        input.achAccountNumber,
       ]
     );
 

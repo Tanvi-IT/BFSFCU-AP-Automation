@@ -18,11 +18,6 @@ import VendorDetail from "./pages/VendorDetail";
 import UserManagement from "./pages/poc/UserManagement";
 import AuditConsole from "./pages/AuditConsole";
 
-// Process documentation
-import InternalProcessFlow from "./pages/InternalProcessFlow";
-import PublicProcessFlow from "./pages/PublicProcessFlow";
-import POCDocumentation from "./pages/poc/POCDocumentation";
-
 import NotFound from "./pages/NotFound";
 
 // Queues (the daily work)
@@ -51,7 +46,6 @@ const App = () => {
 
             {/* Dashboard — the queue-oriented landing view. */}
             <Route path="/dashboard" element={<AuthGate><POCDashboard /></AuthGate>} />
-            <Route path="/poc/dashboard" element={<AuthGate><POCDashboard /></AuthGate>} />
 
             {/* Invoices & vendors */}
             <Route path="/invoices" element={<AuthGate><InvoiceList /></AuthGate>} />
@@ -72,11 +66,6 @@ const App = () => {
             <Route path="/poc/exceptions" element={<AuthGate><ExceptionsQueue /></AuthGate>} />
             <Route path="/poc/exceptions/:id" element={<AuthGate><ExceptionDetail /></AuthGate>} />
             <Route path="/poc/declined" element={<AuthGate><DeclinedQueue /></AuthGate>} />
-
-            {/* Process documentation */}
-            <Route path="/documentation/internal-process-flow" element={<AuthGate><InternalProcessFlow /></AuthGate>} />
-            <Route path="/documentation/public-process-flow" element={<AuthGate><PublicProcessFlow /></AuthGate>} />
-            <Route path="/poc/documentation" element={<AuthGate><POCDocumentation /></AuthGate>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

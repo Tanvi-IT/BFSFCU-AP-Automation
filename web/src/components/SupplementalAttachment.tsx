@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Paperclip, FileText, ExternalLink, Trash2 } from "lucide-react";
+import { Loader2, Paperclip, FileText, ExternalLink } from "lucide-react";
 import { invoicesApi, type Attachment } from "@/services/invoices";
 
 interface SupplementalAttachmentProps {
@@ -26,7 +26,6 @@ export function SupplementalAttachment({
   const [error, setError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [openingId, setOpeningId] = useState<string | null>(null);
-  const [removingId, setRemovingId] = useState<string | null>(null);
 
   // A settled invoice keeps its documents but takes no new ones.
   const locked = status === "approved" || status === "declined" || status === "rejected";
@@ -76,19 +75,6 @@ export function SupplementalAttachment({
     }
   };
 
-  const handleRemove = async (att: Attachment) => {
-    setRemovingId(att.id);
-    setError(null);
-    try {
-      await invoicesApi.supplemental.remove(invoiceId, att.id);
-      await load();
-    } catch (err) {
-      setError((err as Error)?.message || "Could not remove document");
-    } finally {
-      setRemovingId(null);
-    }
-  };
-
   return (
     <div className="mt-3 space-y-2">
       {attachments.length > 0 && (
@@ -114,21 +100,6 @@ export function SupplementalAttachment({
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               ) : (
                 <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              )}
-              {!locked && (
-                <button
-                  type="button"
-                  onClick={() => handleRemove(att)}
-                  disabled={removingId === att.id}
-                  className="shrink-0 text-muted-foreground hover:text-destructive"
-                  aria-label={`Remove ${att.original_filename}`}
-                >
-                  {removingId === att.id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
-                  )}
-                </button>
               )}
             </li>
           ))}

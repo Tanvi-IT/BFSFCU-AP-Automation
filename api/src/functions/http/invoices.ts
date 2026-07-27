@@ -101,23 +101,47 @@ app.http('invoices', {
     POST: {
       roles: Roles.reviewer,
       handler: async ({ req, user, log }) => {
-        const form = await req.formData().catch(() => {
-          throw AppError.validation('Expected a multipart/form-data upload');
-        });
+        // Accept either a multipart/form-data upload (the browser) or a JSON
+        // body carrying a base64 PDF. Machine clients such as the Power
+        // Automate flow send { pdf_base64, filename }.
+        let bytes: Buffer;
+        let filename: string;
+        let contentType: string;
 
-        const file = form.get('file');
-        if (!file || typeof file === 'string') {
-          throw AppError.validation('No file was included in the upload');
+        const reqContentType = req.headers.get('content-type') ?? '';
+        if (reqContentType.includes('application/json')) {
+          const body = (await req.json().catch(() => {
+            throw AppError.validation('Expected a JSON body with a "pdf_base64" field');
+          })) as { pdf_base64?: string; filename?: string; fileName?: string };
+          const raw = body?.pdf_base64;
+          if (!raw || typeof raw !== 'string') {
+            throw AppError.validation('Missing "pdf_base64" in the request body');
+          }
+          // Tolerate a data: URI prefix and any whitespace/newlines.
+          const b64 = raw.replace(/^data:[^;]*;base64,/, '').replace(/\s/g, '');
+          bytes = Buffer.from(b64, 'base64');
+          filename = body.filename || body.fileName || 'invoice.pdf';
+          contentType = 'application/pdf';
+        } else {
+          const form = await req.formData().catch(() => {
+            throw AppError.validation(
+              'Expected a multipart/form-data upload or a JSON body with pdf_base64'
+            );
+          });
+          const file = form.get('file');
+          if (!file || typeof file === 'string') {
+            throw AppError.validation('No file was included in the upload');
+          }
+          contentType = file.type || 'application/octet-stream';
+          bytes = Buffer.from(await file.arrayBuffer());
+          filename = (file as File).name || 'invoice.pdf';
         }
 
-        const contentType = file.type || 'application/octet-stream';
         if (!ALLOWED_TYPES[contentType]) {
           throw AppError.validation(
             `Unsupported file type "${contentType}". Allowed: PDF, PNG, JPEG.`
           );
         }
-
-        const bytes = Buffer.from(await file.arrayBuffer());
         if (bytes.length === 0) {
           throw AppError.validation('The uploaded file is empty');
         }
@@ -125,38 +149,23 @@ app.http('invoices', {
           throw AppError.validation('File exceeds the 20 MB limit');
         }
 
-        // Content hash is the idempotency key — the same bytes can never produce
-        // two invoices, however many times they are uploaded or retried.
+        // Stored for reference/tracing. Duplicates are intentionally allowed:
+        // a re-upload creates a new invoice and the pipeline's duplicate check
+        // supersedes an earlier pending copy or routes the new one to
+        // Exceptions when an earlier copy is already approved.
         const fileHash = createHash('sha256').update(bytes).digest('hex');
 
-        const existing = await invoices.findByFileHash(fileHash);
-        if (existing) {
-          log.info('Duplicate upload ignored', { invoiceId: existing.id });
-          return ok({
-            invoiceId: existing.id,
-            status: existing.status,
-            duplicate: true,
-            message: 'This document has already been uploaded.',
-          });
-        }
-
-        const filename = (file as File).name || 'invoice.pdf';
         const blobPath = buildBlobPath(filename, randomUUID());
 
         await uploadBlob(blobPath, bytes, contentType);
 
-        const { id, created } = await invoices.createQueued({
+        const { id } = await invoices.createQueued({
           blobPath,
           fileHash,
           originalFilename: filename,
           source: 'manual_upload',
           submittedBy: user.id,
         });
-
-        if (!created) {
-          // Lost a race with a concurrent identical upload — harmless.
-          return ok({ invoiceId: id, status: 'queued', duplicate: true });
-        }
 
         await enqueueInvoiceJob({ invoiceId: id, blobPath, fileHash, source: 'manual_upload' });
 

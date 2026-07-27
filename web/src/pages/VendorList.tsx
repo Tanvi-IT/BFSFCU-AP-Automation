@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { vendorsApi } from "@/services";
 import { invoicesApi } from "@/services/invoices";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +18,8 @@ import {
   Sparkles,
   Upload,
   Search,
+  Copy,
+  Check,
 } from "lucide-react";
 
 interface VendorWithEnrichment {
@@ -27,6 +30,36 @@ interface VendorWithEnrichment {
   glCode: string | null;
   externalId: string | null;
   status: string | null;
+  achRoutingNumber: string | null;
+  achAccountNumber: string | null;
+}
+
+/** A labelled ACH value with a copy button, shown in the vendor popup. */
+function CopyRow({ label, value }: { label: string; value: string | null }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — user can select manually */
+    }
+  };
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 rounded border bg-muted/40 px-3 py-2 font-mono text-sm break-all">
+          {value || "—"}
+        </code>
+        <Button variant="outline" size="sm" onClick={copy} disabled={!value}>
+          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /** Rows per page. The directory runs to hundreds of vendors after an import. */
@@ -38,6 +71,7 @@ const VendorList = () => {
   const [importing, setImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
+  const [selectedVendor, setSelectedVendor] = useState<VendorWithEnrichment | null>(null);
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -138,6 +172,8 @@ const VendorList = () => {
         glCode: vendorGLMap.get(v.id) || null,
         externalId: (v.external_id as string | null) ?? null,
         status: v.status ?? null,
+        achRoutingNumber: (v.ach_routing_number as string | null) ?? null,
+        achAccountNumber: (v.ach_account_number as string | null) ?? null,
       }));
 
       setVendors(mapped.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })));
@@ -227,12 +263,17 @@ const VendorList = () => {
                   {pageRows.map((vendor) => (
                     <TableRow key={vendor.id}>
                       <TableCell>
-                        <span className="font-medium flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedVendor(vendor)}
+                          className="font-medium flex items-center gap-2 text-left hover:text-primary hover:underline"
+                          title="View ACH details"
+                        >
                           {vendor.name}
                           {vendor.hasEnrichment && (
                             <Sparkles className="h-3 w-3 text-primary" />
                           )}
-                        </span>
+                        </button>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {vendor.externalId || "—"}
@@ -289,6 +330,21 @@ const VendorList = () => {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!!selectedVendor} onOpenChange={(open) => !open && setSelectedVendor(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              {selectedVendor?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <CopyRow label="ACH Routing #" value={selectedVendor?.achRoutingNumber ?? null} />
+            <CopyRow label="ACH Account #" value={selectedVendor?.achAccountNumber ?? null} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };

@@ -17,7 +17,6 @@ import { displayInvoiceNumber } from "@/lib/utils";
 import { CanonicalInvoice, CanonicalInvoiceLineItem, CanonicalInvoiceAnomaly } from "@/types/invoice";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Send, ArrowLeft, MessageSquare, Clock, Info, FileOutput, RefreshCcw, Bot } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ERPExportButton } from "@/components/ERPExportButton";
 import { InvoiceTimeline } from "@/components/InvoiceTimeline";
 import { InvoiceNotes } from "@/components/InvoiceNotes";
 import { VendorRiskSnapshot } from "@/components/VendorRiskSnapshot";
@@ -345,13 +344,6 @@ const InvoiceDetail = () => {
             </div>
           </div>
           <div className="flex max-w-full flex-wrap gap-2 lg:justify-end">
-            {/* ERP Export */}
-            <ERPExportButton
-              invoiceId={invoice.id}
-              tenantId={invoice.tenantId}
-              invoiceNumber={invoice.invoiceNumber}
-            />
-
             {/* Maker Actions */}
             {canSubmit && (
               <Button
@@ -470,7 +462,7 @@ const InvoiceDetail = () => {
                   <p className="text-sm font-medium text-muted-foreground">Status</p>
                   <StatusBadge status={invoice.status} className="mt-1" />
                 </div>
-                {invoice.status?.toLowerCase() !== 'approved' && (
+                {!["approved", "rejected"].includes(invoice.status?.toLowerCase() ?? "") && (
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-muted-foreground">Risk Level</p>
                     <RiskBadge level={invoice.riskLevel} className="mt-1" />
@@ -499,15 +491,9 @@ const InvoiceDetail = () => {
                     </div>
                   </div>
                 )}
-                <div className="field-row min-w-0" style={{ marginTop: '12px' }}>
-                  <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
-                    Transaction Date
-                  </span>
-                  <span style={{ fontSize: '14px', fontWeight: 500 }}>
-                    {invoice.transactionDate
-                      ? (() => { const [y,m,d] = String(invoice.transactionDate).split('-').map(Number); return new Date(y, m-1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); })()
-                      : '—'}
-                  </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-muted-foreground">Transaction Date</p>
+                  <p className="text-foreground">{formatDateOnly(invoice.transactionDate)}</p>
                 </div>
                 {invoice.sourceTransactionDate && (
                   <div className="field-row min-w-0" style={{ marginTop: '8px' }}>
@@ -676,9 +662,9 @@ const InvoiceDetail = () => {
         )}
 
         {/* Variation Analysis & Vendor Risk - full width stacked.
-            Hidden for approved invoices: once an invoice is approved these
-            pre-approval risk signals are no longer actionable. */}
-        {invoice.status?.toLowerCase() !== "approved" && (
+            Hidden once an invoice is settled (approved or declined): these
+            pre-decision risk signals are no longer actionable. */}
+        {!["approved", "rejected"].includes(invoice.status?.toLowerCase() ?? "") && (
           <div className="space-y-6">
             <VariationDetailCard
               variationScore={invoice.variationScore}

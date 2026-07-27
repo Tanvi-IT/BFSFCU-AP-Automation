@@ -71,9 +71,10 @@ export interface CreateQueuedInvoice {
 /**
  * Insert an invoice in `queued` state.
  *
- * ON CONFLICT makes this idempotent: a concurrent duplicate upload returns the
- * existing row instead of raising, so two racing requests cannot create two
- * invoices for the same document.
+ * Duplicates are allowed: re-uploading the same document creates a new invoice,
+ * and the pipeline's duplicate check decides what happens (supersede an earlier
+ * pending copy, or route the new one to Exceptions when an earlier copy is
+ * already approved). File-hash is stored for reference but no longer unique.
  */
 export async function createQueued(
   input: CreateQueuedInvoice
@@ -81,18 +82,12 @@ export async function createQueued(
   const inserted = await queryOne<{ id: string }>(
     `INSERT INTO invoices (blob_path, file_hash, original_filename, source, submitted_by, status)
      VALUES ($1, $2, $3, $4, $5, 'queued')
-     ON CONFLICT (file_hash) DO NOTHING
      RETURNING id`,
     [input.blobPath, input.fileHash, input.originalFilename, input.source, input.submittedBy]
   );
 
-  if (inserted) return { id: inserted.id, created: true };
-
-  const existing = await findByFileHash(input.fileHash);
-  if (!existing) {
-    throw new Error('Insert conflicted but no existing invoice was found');
-  }
-  return { id: existing.id, created: false };
+  if (!inserted) throw new Error('Failed to create the invoice row');
+  return { id: inserted.id, created: true };
 }
 
 export async function setStatus(
@@ -167,10 +162,11 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
   if (filters.search) {
     params.push(`%${filters.search}%`);
     const p = `$${params.length}`;
-    // `decline_reason` is included so the Declined queue can be searched by why
-    // an invoice was declined, which is how that history is usually recalled.
+    // Search invoice number, vendor name (both the live vendor and the name
+    // captured on the invoice, so unmatched-vendor invoices are still findable),
+    // and the decline reason (how declined history is usually recalled).
     where.push(
-      `(i.invoice_number ILIKE ${p} OR v.name ILIKE ${p} OR i.decline_reason ILIKE ${p})`
+      `(i.invoice_number ILIKE ${p} OR v.name ILIKE ${p} OR i.vendor_name_snapshot ILIKE ${p} OR i.decline_reason ILIKE ${p})`
     );
   }
 

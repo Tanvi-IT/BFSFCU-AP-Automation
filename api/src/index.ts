@@ -14,8 +14,6 @@ import './functions/http/workflow';
 import './functions/http/vendors';
 import './functions/http/users';
 import './functions/http/departments';
-import './functions/http/exports';
-import './functions/http/erp';
 import './functions/http/demo';
 import './functions/http/integrations';
 
