@@ -15,10 +15,10 @@
  */
 
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
-import { timingSafeEqual } from 'node:crypto';
 import type { HttpRequest } from '@azure/functions';
 import { config } from './config';
 import { AppError } from './errors';
+import * as apiKeys from './repository/apiKeys';
 
 /** Application roles. Two-role model: admin and user. */
 export type AppRole = 'admin' | 'user';
@@ -92,44 +92,32 @@ function readToken(req: HttpRequest): string | undefined {
 }
 
 /**
- * Constant-time comparison of two strings. Returns false on any length
- * mismatch without leaking timing about how much matched.
- */
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && timingSafeEqual(ab, bb);
-}
-
-/**
- * Machine-to-machine authentication via a static ingestion key.
+ * Machine-to-machine authentication via an API key.
  *
- * Returns the service-account principal when a valid `X-Api-Key` is present,
- * or `undefined` when the header is absent (so the session path runs instead).
- * A present-but-wrong key — or a key sent while ingestion is not configured on
- * the server — is a hard failure, never a silent fall-through.
+ * Returns the service-account principal when a valid `X-Api-Key` is present, or
+ * `undefined` when the header is absent (so the session path runs instead). The
+ * key is looked up by hash in api_keys and maps to the user it acts as. A
+ * present-but-invalid/revoked key is a hard failure, never a silent
+ * fall-through to anonymous.
  */
-function authenticateApiKey(req: HttpRequest): Principal | undefined {
+async function authenticateApiKey(req: HttpRequest): Promise<Principal | undefined> {
   const provided = req.headers.get(API_KEY_HEADER);
   if (!provided) return undefined;
 
-  const { apiKey, userId } = config.ingest;
-  if (!apiKey || !userId) {
-    throw AppError.unauthorized('API key authentication is not enabled');
-  }
-  if (!safeEqual(provided, apiKey)) {
+  const userId = await apiKeys.verifyKey(provided.trim());
+  if (!userId) {
     throw AppError.unauthorized('Invalid API key');
   }
   return { sub: userId };
 }
 
 /**
- * Verify the request's identity — a machine ingestion key if present, otherwise
- * the session token.
+ * Verify the request's identity — a machine API key if present, otherwise the
+ * session token.
  * Throws AppError.unauthorized on any failure — never returns a partial result.
  */
 export async function authenticate(req: HttpRequest): Promise<Principal> {
-  const apiKeyPrincipal = authenticateApiKey(req);
+  const apiKeyPrincipal = await authenticateApiKey(req);
   if (apiKeyPrincipal) return apiKeyPrincipal;
 
   const token = readToken(req);

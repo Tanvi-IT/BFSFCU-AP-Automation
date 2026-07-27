@@ -201,7 +201,7 @@ export default function LowConfidenceQueue() {
       const updatedAmountCents = Math.round(parseFloat(editFields.total_amount) * 100);
       const updatedFilename = `${updatedVendorName} Inv ${updatedInvoiceNumber} Amt ${updatedAmountCents}.pdf`;
 
-      if (changes.length === 0) {
+      if (changes.length === 0 && !selectedVendorId) {
         // Still update system_filename even if no field changes
         await invoicesApi.update(currentInvoice.id, { systemFilename: updatedFilename });
         cancelEdit();

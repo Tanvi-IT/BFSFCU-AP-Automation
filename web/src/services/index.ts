@@ -152,6 +152,32 @@ export const demoApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Integrations — the Power Automate machine account's API key (admin only).
+// ---------------------------------------------------------------------------
+export interface PowerAutomateKeyStatus {
+  accountExists: boolean;
+  configured: boolean;
+  email?: string;
+  prefix?: string | null;
+  createdAt?: string | null;
+  lastUsedAt?: string | null;
+}
+
+export const integrationsApi = {
+  powerAutomateKey: {
+    /** Current key status — prefix and usage only, never the raw secret. */
+    status: () =>
+      api.get<PowerAutomateKeyStatus>("/integrations/power-automate/key"),
+    /** Rotate: burn the old key and return the new raw key exactly once. */
+    rotate: () =>
+      api.post<{ key: string; prefix: string }>(
+        "/integrations/power-automate/key",
+        {}
+      ),
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Departments (GL coding lookup)
 // ---------------------------------------------------------------------------
 export interface Department {

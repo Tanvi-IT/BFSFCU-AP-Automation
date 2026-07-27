@@ -1,13 +1,159 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/hooks/useAuth";
-import { usersApi } from "@/services";
+import { usersApi, integrationsApi, type PowerAutomateKeyStatus } from "@/services";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Trash2, UserPlus, Shield, Users, KeyRound } from "lucide-react";
+import { Loader2, Trash2, UserPlus, Shield, Users, KeyRound, Zap, Copy, Check, RefreshCw } from "lucide-react";
+
+/** Admin-only card to view/copy and rotate the Power Automate API key. */
+function PowerAutomateKeyCard() {
+  const { toast } = useToast();
+  const [status, setStatus] = useState<PowerAutomateKeyStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [rotating, setRotating] = useState(false);
+  const [newKey, setNewKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const load = async () => {
+    try {
+      setStatus(await integrationsApi.powerAutomateKey.status());
+    } catch {
+      /* leave status null; card still allows generating a key */
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const rotate = async () => {
+    setRotating(true);
+    try {
+      const res = await integrationsApi.powerAutomateKey.rotate();
+      setNewKey(res.key);
+      setCopied(false);
+      await load();
+      toast({ title: "New key generated", description: "Copy it now — it will not be shown again." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Could not generate key", description: (err as Error)?.message });
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  const copyKey = async () => {
+    if (!newKey) return;
+    try {
+      await navigator.clipboard.writeText(newKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast({ variant: "destructive", title: "Copy failed", description: "Select the key and copy it manually." });
+    }
+  };
+
+  const endpoint = `${window.location.origin}/api/invoices`;
+  const hasKey = !!status?.configured;
+
+  return (
+    <div className="border rounded-lg p-6 mb-8 bg-card">
+      <div className="flex items-center gap-2 mb-1">
+        <Zap className="h-4 w-4 text-primary" />
+        <h2 className="font-semibold">Power Automate Integration</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        A flow uploads invoices by POSTing the PDF to the endpoint below with the API key in an{" "}
+        <code className="text-xs">X-Api-Key</code> header. The key acts as the{" "}
+        <span className="font-medium">Power Automate</span> service account.
+      </p>
+
+      <div className="space-y-1 text-sm mb-4">
+        <div>
+          <span className="text-muted-foreground">Endpoint:&nbsp;</span>
+          <code className="text-xs break-all">POST {endpoint}</code>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Current key:&nbsp;</span>
+          {loading ? (
+            <span className="text-muted-foreground">checking…</span>
+          ) : hasKey ? (
+            <>
+              <code className="text-xs">{status?.prefix}••••••••</code>
+              <span className="text-muted-foreground">
+                {" "}· last used {status?.lastUsedAt ? new Date(status.lastUsedAt).toLocaleString() : "never"}
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">not generated yet</span>
+          )}
+        </div>
+      </div>
+
+      {newKey && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 mb-4">
+          <p className="text-xs font-medium text-amber-800 mb-2">
+            Copy this key now — it will not be shown again. Store it in Key Vault / the flow's connection.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all rounded bg-white border px-2 py-1 text-xs font-mono">{newKey}</code>
+            <Button size="sm" variant="outline" onClick={copyKey}>
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              <span className="ml-1">{copied ? "Copied" : "Copy"}</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="outline" size="sm" disabled={rotating}>
+            {rotating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+            {hasKey ? "Regenerate key" : "Generate key"}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{hasKey ? "Regenerate the API key?" : "Generate an API key?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {hasKey
+                ? "The existing key stops working immediately. Any Power Automate flow using it must be updated with the new key."
+                : "This creates the API key for the Power Automate service account. Copy it right after — it is shown only once."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={rotating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void rotate();
+              }}
+              disabled={rotating}
+            >
+              {hasKey ? "Regenerate" : "Generate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
 
 interface AppUser {
   id: string;
@@ -134,6 +280,9 @@ export default function UserManagement() {
             <p className="text-sm text-muted-foreground">Add, remove, and manage user roles</p>
           </div>
         </div>
+
+        {/* Power Automate integration key */}
+        <PowerAutomateKeyCard />
 
         {/* Add User */}
         <div className="border rounded-lg p-6 mb-8 bg-card">
