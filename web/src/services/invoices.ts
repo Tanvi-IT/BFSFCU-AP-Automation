@@ -95,6 +95,7 @@ export interface Invoice {
   ach_routing_number?: string | null;
   ach_account_number?: string | null;
   gl_code?: string | null;
+  gl_approver?: string | null;
   department_id?: string | null;
   department_name?: string | null;
   transaction_date?: string | null;
@@ -267,6 +268,7 @@ export const invoicesApi = {
       totalAmount?: number;
       vendorId?: string;
       glCode?: string;
+      glApprover?: string;
       departmentName?: string;
       departmentId?: string;
       achRoutingNumber?: string;

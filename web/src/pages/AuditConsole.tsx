@@ -30,6 +30,7 @@ import { Loader2, Search, Shield, FileText } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { invoicesApi, type Invoice } from "@/services/invoices";
 import { activityApi } from "@/services";
+import { invoiceStatusLabel } from "@/lib/invoiceStatus";
 import {
   DateRangePresetFilter,
   presetToRange,
@@ -41,7 +42,7 @@ import {
 // (submitted), one escalated (exception), or one already settled (approved /
 // declined). Intake states (queued/processing/validated) are omitted.
 const STATUSES: { value: string; label: string }[] = [
-  { value: "submitted", label: "Submitted" },
+  { value: "submitted", label: "In Queue" },
   { value: "exception", label: "Exception" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Declined" },
@@ -51,25 +52,6 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
   if (status === "approved") return "default";
   if (status === "declined" || status === "rejected" || status === "exception") return "destructive";
   return "outline";
-}
-
-/**
- * The audit column collapses internal statuses to the four states a reviewer
- * thinks in: an invoice in review (low OR high confidence, still queued or
- * processing) is "Submitted"; the rest are the settled/escalated states.
- */
-function auditStatusLabel(status: string): string {
-  switch (status) {
-    case "approved":
-      return "Approved";
-    case "rejected":
-    case "declined":
-      return "Declined";
-    case "exception":
-      return "Exception";
-    default:
-      return "Submitted";
-  }
 }
 
 function actionVariant(action: string): "default" | "secondary" | "destructive" | "outline" {
@@ -331,7 +313,7 @@ export default function AuditConsole() {
                       <TableCell className="font-medium">{inv.invoice_number || "—"}</TableCell>
                       <TableCell>{inv.vendor_name || "—"}</TableCell>
                       <TableCell>
-                        <Badge variant={statusVariant(inv.status)}>{auditStatusLabel(inv.status)}</Badge>
+                        <Badge variant={statusVariant(inv.status)}>{invoiceStatusLabel(inv.status)}</Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {inv.currency} {inv.total_amount}

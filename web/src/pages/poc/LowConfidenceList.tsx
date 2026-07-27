@@ -12,7 +12,7 @@ import { getReasonLabels } from "@/lib/invoiceReasons";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, AlertTriangle, Eye, Search } from "lucide-react";
 import { HIGH_CONFIDENCE_THRESHOLD } from "@/lib/pocConfig";
-import { displayInvoiceNumber } from "@/lib/utils";
+import { displayInvoiceNumber, sanitizeGlAccount } from "@/lib/utils";
 
 interface InvoiceWithVendor {
   id: string;
@@ -204,7 +204,7 @@ export default function LowConfidenceList() {
                     <TableHead>Amount</TableHead>
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Received</TableHead>
-                    <TableHead>GL (Approver)</TableHead>
+                    <TableHead>GL Account</TableHead>
                     <TableHead>Reason(s)</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
@@ -234,9 +234,10 @@ export default function LowConfidenceList() {
                           <div className="flex items-center gap-1">
                             <Input
                               value={editingGLValue}
-                              onChange={(e) => setEditingGLValue(e.target.value)}
-                              className="h-7 w-28 text-xs"
-                              placeholder="Enter GL..."
+                              onChange={(e) => setEditingGLValue(sanitizeGlAccount(e.target.value))}
+                              inputMode="numeric"
+                              className="h-7 w-28 text-xs font-mono"
+                              placeholder="GL account..."
                               autoFocus
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") {

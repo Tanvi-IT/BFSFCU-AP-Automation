@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { invoicesApi, isInFlight, type InvoiceStatus } from "@/services/invoices";
 import { activityApi } from "@/services";
+import { invoiceStatusLabel } from "@/lib/invoiceStatus";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -406,23 +407,8 @@ export default function POCUpload() {
     }
   };
 
-  /** Where the worker put it, in the language the queue pages already use. */
-  const finalStatusLabel = (status: InvoiceStatus): string => {
-    switch (status) {
-      case "validated":
-        return "In Review";
-      case "submitted":
-        return "Ready to Approve";
-      case "exception":
-        return "Needs Review";
-      case "approved":
-        return "Approved";
-      case "rejected":
-        return "Declined";
-      default:
-        return status;
-    }
-  };
+  /** Where the worker put it — the same tag vocabulary used across the app. */
+  const finalStatusLabel = (status: InvoiceStatus): string => invoiceStatusLabel(status);
 
   const getStatusLabel = (f: UploadFile): string => {
     switch (f.stage) {
@@ -684,12 +670,9 @@ export default function POCUpload() {
                         inv.status === "rejected" ? "bg-gray-100 text-gray-600" :
                         "bg-yellow-100 text-yellow-700"
                       }`}>
-                        {inv.status === "validated" ? "In Review" :
-                         inv.status === "approved" ? "Approved" :
-                         inv.status === "exception" && inv.source === "email" ? "⚠ Email — Needs Review" :
-                         inv.status === "exception" ? "Exception" :
-                         inv.status === "rejected" ? "Declined" :
-                         inv.status}
+                        {inv.status === "exception" && inv.source === "email"
+                          ? "⚠ Email — Needs Review"
+                          : invoiceStatusLabel(inv.status)}
                       </span>
                       <Button
                         variant="ghost"

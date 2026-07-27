@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { invoicesApi, QUEUE } from "@/services/invoices";
-import { vendorsApi, departmentsApi } from "@/services";
+import { vendorsApi } from "@/services";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { HIGH_CONFIDENCE_THRESHOLD } from "@/lib/pocConfig";
 import { ConfidenceBadge, anomalyToConfidence } from "@/components/ConfidenceBadge";
-import { displayInvoiceNumber } from "@/lib/utils";
+import { displayInvoiceNumber, sanitizeGlAccount } from "@/lib/utils";
 import { InvoiceNotes } from "@/components/InvoiceNotes";
 import { InvoiceAuditTrail } from "@/components/poc/InvoiceAuditTrail";
 import { SupplementalAttachment } from "@/components/SupplementalAttachment";
@@ -63,6 +63,7 @@ interface InvoiceDetail {
   bad_file_reason: string | null;
   supplemental_pdf_count: number | null;
   gl_code: string | null;
+  gl_approver: string | null;
   department_id: string | null;
   extraction_provider: string | null;
   reasoning_provider: string | null;
@@ -88,9 +89,9 @@ export default function HighConfidenceDetail() {
   const [isActioning, setIsActioning] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   
-  // GL and Department editing (free text)
-  const [glValue, setGlValue] = useState<string>("");
-  const [departmentValue, setDepartmentValue] = useState<string>("");
+  // GL coding: Account (14-digit number, dashes allowed) + Approver (name).
+  const [glAccount, setGlAccount] = useState<string>("");
+  const [glApprover, setGlApprover] = useState<string>("");
   const [isSavingChanges, setIsSavingChanges] = useState(false);
   const prevInvoiceIdRef = useRef<string | null>(null);
   const [applyToAllVendorInvoices, setApplyToAllVendorInvoices] = useState(true);
@@ -154,13 +155,8 @@ export default function HighConfidenceDetail() {
     if (currentInvoice && currentInvoice.id !== prevInvoiceIdRef.current) {
       prevInvoiceIdRef.current = currentInvoice.id;
       setTimeout(() => fetchPdfUrl(), 100);
-      setGlValue(currentInvoice.gl_code || "");
-      // For department, we need to fetch the name if we have an ID
-      if (currentInvoice.department_id) {
-        fetchDepartmentName(currentInvoice.department_id);
-      } else {
-        setDepartmentValue("");
-      }
+      setGlAccount(currentInvoice.gl_code || "");
+      setGlApprover(currentInvoice.gl_approver || "");
       setEditVendor(currentInvoice.vendor?.name || "");
       setEditAmount(currentInvoice.total_amount.toString());
       setEditInvoiceNumber(currentInvoice.invoice_number);
@@ -169,12 +165,6 @@ export default function HighConfidenceDetail() {
       setEditAchAccount(currentInvoice.ach_account_number || "");
     }
   }, [currentInvoice?.id]);
-
-
-  const fetchDepartmentName = async (deptId: string) => {
-    const all = await departmentsApi.list().catch(() => []);
-    setDepartmentValue(all.find((d) => d.id === deptId)?.name || "");
-  };
 
 
   const fetchHighConfidenceInvoices = async () => {
@@ -220,6 +210,7 @@ export default function HighConfidenceDetail() {
         bad_file_reason: inv.bad_file_reason ?? null,
         supplemental_pdf_count: inv.supplemental_pdf_count ?? 0,
         gl_code: inv.gl_code,
+        gl_approver: inv.gl_approver ?? null,
         department_id: inv.department_id,
         extraction_provider: inv.extraction_provider,
         reasoning_provider: inv.reasoning_provider,
@@ -249,35 +240,18 @@ export default function HighConfidenceDetail() {
     }
   };
 
-  // Helper function to find or create a department by name
-  const getOrCreateDepartmentId = async (departmentName: string): Promise<string | null> => {
-    if (!departmentName.trim() || !tenantId) return null;
-    
-    const trimmedName = departmentName.trim();
-    
-    // First, try to find existing department by name
-    const dept = await departmentsApi.findOrCreate(trimmedName);
-    return dept.id;
-  };
-
   const handleSaveChanges = async () => {
     if (!currentInvoice) return;
-    
+
     setIsSavingChanges(true);
     try {
-      // Get or create department ID from the free-text name
-      let departmentId: string | null = null;
-      if (departmentValue.trim()) {
-        departmentId = await getOrCreateDepartmentId(departmentValue);
-      }
-      
-      // Update current invoice
+      // Update current invoice.
       // Item 31/38: if user selected an existing vendor from the dropdown, re-link this
       // invoice to that vendor. Only sets vendor_id when a selection was made, so a plain
       // text edit or no change never wipes the existing vendor link.
       await invoicesApi.update(currentInvoice.id, {
-        glCode: glValue.trim(),
-        ...(departmentId ? { departmentId } : {}),
+        glCode: glAccount.trim(),
+        glApprover: glApprover.trim(),
         invoiceNumber: editInvoiceNumber.trim(),
         totalAmount: parseFloat(editAmount) || currentInvoice.total_amount,
         ...(editDate ? { invoiceDate: editDate } : {}),
@@ -289,25 +263,23 @@ export default function HighConfidenceDetail() {
       // The server writes the audit entry (including any vendor re-link) in the
       // same transaction as the update.
 
-      // Apply the same coding to every other invoice from this vendor.
+      // Apply the same GL coding to every other invoice from this vendor.
       if (applyToAllVendorInvoices && currentInvoice.vendor?.id) {
         await vendorsApi
           .applyCoding(currentInvoice.vendor.id, {
-            glCode: glValue.trim() || null,
-            departmentId,
+            glCode: glAccount.trim() || null,
+            glApprover: glApprover.trim() || null,
           })
           .catch((err) => console.error("Error updating vendor invoices:", err));
       }
 
       // Honest toast: describe only what actually changed.
-      const glOrDeptSet = !!(glValue.trim() || departmentId);
+      const glSet = !!(glAccount.trim() || glApprover.trim());
       let savedDescription: string;
       if (selectedVendorId && selectedVendorId !== currentInvoice.vendor?.id) {
         savedDescription = "Invoice re-linked to the selected vendor.";
-      } else if (applyToAllVendorInvoices && glOrDeptSet && currentInvoice.vendor?.name) {
-        savedDescription = `GL and Department updated for all ${currentInvoice.vendor.name} invoices.`;
-      } else if (glOrDeptSet) {
-        savedDescription = "Invoice details updated for this invoice.";
+      } else if (applyToAllVendorInvoices && glSet && currentInvoice.vendor?.name) {
+        savedDescription = `GL coding updated for all ${currentInvoice.vendor.name} invoices.`;
       } else {
         savedDescription = "Invoice details updated for this invoice.";
       }
@@ -598,13 +570,8 @@ export default function HighConfidenceDetail() {
     setEditDate(currentInvoice.invoice_date || "");
     setEditAchRouting(currentInvoice.ach_routing_number || "");
     setEditAchAccount(currentInvoice.ach_account_number || "");
-    setGlValue(currentInvoice.gl_code || "");
-
-    if (currentInvoice.department_id) {
-        fetchDepartmentName(currentInvoice.department_id);
-    } else {
-        setDepartmentValue("");
-    }
+    setGlAccount(currentInvoice.gl_code || "");
+    setGlApprover(currentInvoice.gl_approver || "");
 
     setIsFieldEditing(false);
 }} className="gap-1 text-muted-foreground">
@@ -772,37 +739,38 @@ export default function HighConfidenceDetail() {
                 </div>
               </div>
             <Separator />
- {/* GL and Department Editing - Free Text */}
+ {/* GL coding: Account + Approver */}
               <div className="space-y-4">
                 <h4 className="font-semibold">Assignment</h4>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="gl-input">GL (Approver)</Label>
+                    <Label htmlFor="gl-account-input">GL Account</Label>
                     {isFieldEditing ? (
   <Input
-    id="gl-input"
-    value={glValue}
-    onChange={(e) => setGlValue(e.target.value)}
-    placeholder="Enter GL code or approver name..."
+    id="gl-account-input"
+    value={glAccount}
+    onChange={(e) => setGlAccount(sanitizeGlAccount(e.target.value))}
+    inputMode="numeric"
+    placeholder="14-digit account (dashes allowed)"
   />
 ) : (
-  <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm">
-    {glValue || "-"}
+  <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm font-mono">
+    {glAccount || "-"}
   </div>
 )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="dept-input">Department</Label>
+                    <Label htmlFor="gl-approver-input">GL Approver</Label>
                     {isFieldEditing ? (
   <Input
-    id="dept-input"
-    value={departmentValue}
-    onChange={(e) => setDepartmentValue(e.target.value)}
-    placeholder="Enter department name..."
+    id="gl-approver-input"
+    value={glApprover}
+    onChange={(e) => setGlApprover(e.target.value)}
+    placeholder="Approver name"
   />
 ) : (
   <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm">
-    {departmentValue || "-"}
+    {glApprover || "-"}
   </div>
 )}
                   </div>

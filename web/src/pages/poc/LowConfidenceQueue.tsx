@@ -12,10 +12,10 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { invoicesApi, QUEUE } from "@/services/invoices";
-import { vendorsApi, departmentsApi } from "@/services";
+import { vendorsApi } from "@/services";
 import { useAuth } from "@/hooks/useAuth";
 import { getReasonLabels } from "@/lib/invoiceReasons";
-import { displayInvoiceNumber } from "@/lib/utils";
+import { displayInvoiceNumber, sanitizeGlAccount } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   Loader2,
@@ -75,6 +75,7 @@ interface InvoiceDetail {
   duplicate_type: DuplicateType;
   duplicate_of: string | null;
   gl_code: string | null;
+  gl_approver: string | null;
   department_id: string | null;
   extraction_provider: string | null;
   reasoning_provider: string | null;
@@ -123,9 +124,9 @@ export default function LowConfidenceQueue() {
   const [isEditing, setIsEditing] = useState(false);
   const [isFieldEditing, setIsFieldEditing] = useState(false);
   
-  // GL and Department editing (free text for POC)
-  const [glValue, setGlValue] = useState<string>("");
-  const [departmentValue, setDepartmentValue] = useState<string>("");
+  // GL coding: Account (14-digit number, dashes allowed) + Approver (name).
+  const [glAccount, setGlAccount] = useState<string>("");
+  const [glApprover, setGlApprover] = useState<string>("");
   const [isSavingChanges, setIsSavingChanges] = useState(false);
   const [applyToAllVendorInvoices, setApplyToAllVendorInvoices] = useState(true);
   const [editFields, setEditFields] = useState<{
@@ -303,23 +304,13 @@ export default function LowConfidenceQueue() {
       fetchPreviousInvoice();
       fetchDuplicateOriginal();
       setTimeout(() => fetchPdfUrl(), 100);
-      setGlValue(currentInvoice.gl_code || "");
-      if (currentInvoice.department_id) {
-        fetchDepartmentName(currentInvoice.department_id);
-      } else {
-        setDepartmentValue("");
-      }
+      setGlAccount(currentInvoice.gl_code || "");
+      setGlApprover(currentInvoice.gl_approver || "");
     }
   }, [currentInvoice]);
 
   // Removed: this effect was overriding URL-based navigation from list view
   // currentIndex is now synced from URL id via the effect above
-
-  const fetchDepartmentName = async (deptId: string) => {
-    const all = await departmentsApi.list().catch(() => []);
-    setDepartmentValue(all.find((d) => d.id === deptId)?.name || "");
-  };
-
 
   const fetchLowConfidenceInvoices = async () => {
     console.log("[LC Debug] fetchLowConfidenceInvoices called, tenantId:", tenantId);
@@ -374,6 +365,7 @@ export default function LowConfidenceQueue() {
         duplicate_type: inv.duplicate_type as DuplicateType,
         duplicate_of: inv.duplicate_of,
         gl_code: inv.gl_code,
+        gl_approver: inv.gl_approver ?? null,
         department_id: inv.department_id,
         extraction_provider: inv.extraction_provider,
         reasoning_provider: inv.reasoning_provider,
@@ -461,52 +453,34 @@ export default function LowConfidenceQueue() {
     }
   };
 
-  // Helper function to find or create a department by name
-  const getOrCreateDepartmentId = async (departmentName: string): Promise<string | null> => {
-    if (!departmentName.trim() || departmentName === "__none__" || !tenantId) return null;
-    
-    const trimmedName = departmentName.trim();
-    
-    // Find-or-create is a single server call, so two reviewers typing the same
-    // department name concurrently cannot create duplicates.
-    const dept = await departmentsApi.findOrCreate(trimmedName);
-    return dept.id;
-  };
-
   const handleSaveChanges = async () => {
     if (!currentInvoice) return;
-    
+
     setIsSavingChanges(true);
     try {
-      // Get or create department ID from the free-text name
-      let departmentId: string | null = null;
-      if (departmentValue.trim()) {
-        departmentId = await getOrCreateDepartmentId(departmentValue);
-      }
-      
-      // Update current invoice
+      // Update current invoice's GL coding (Account + Approver).
       await invoicesApi.update(currentInvoice.id, {
-        glCode: glValue.trim(),
-        ...(departmentId ? { departmentId } : {}),
+        glCode: glAccount.trim(),
+        glApprover: glApprover.trim(),
       });
 
-      // Also update GL and Department for ALL invoices from this vendor (if toggle is ON)
+      // Also apply the same GL coding to ALL invoices from this vendor (if toggle is ON)
       if (applyToAllVendorInvoices && currentInvoice.vendor?.id) {
         await vendorsApi
           .applyCoding(currentInvoice.vendor.id, {
-            glCode: glValue.trim() || null,
-            departmentId,
+            glCode: glAccount.trim() || null,
+            glApprover: glApprover.trim() || null,
           })
           .catch((err) => console.error("Error updating vendor invoices:", err));
       }
 
-      // Honest toast: only claim GL/Department updated when they actually have values.
-      const glOrDeptSet = !!(glValue.trim() || departmentId);
+      // Honest toast: only claim GL coding updated when it actually has values.
+      const glSet = !!(glAccount.trim() || glApprover.trim());
       let savedDescription: string;
-      if (applyToAllVendorInvoices && glOrDeptSet && currentInvoice.vendor?.name) {
-        savedDescription = `GL and Department updated for all ${currentInvoice.vendor.name} invoices.`;
-      } else if (glOrDeptSet) {
-        savedDescription = "GL and Department updated for this invoice.";
+      if (applyToAllVendorInvoices && glSet && currentInvoice.vendor?.name) {
+        savedDescription = `GL coding updated for all ${currentInvoice.vendor.name} invoices.`;
+      } else if (glSet) {
+        savedDescription = "GL coding updated for this invoice.";
       } else {
         savedDescription = "Changes saved for this invoice.";
       }
@@ -514,7 +488,7 @@ export default function LowConfidenceQueue() {
         title: "Changes Saved",
         description: savedDescription,
       });
-      
+
       fetchLowConfidenceInvoices();
     } catch (error: any) {
       toast({
@@ -993,42 +967,43 @@ export default function LowConfidenceQueue() {
                     )}
                   </div>
                 </div>
-{/* GL and Department Editing */}
+{/* GL coding: Account + Approver */}
               {/* Assignment */}
 <div className="col-span-2 border-t pt-4 mt-2">
   <h4 className="font-semibold mb-4">Assignment</h4>
 
   <div className="grid grid-cols-2 gap-3">
     <div className="space-y-2">
-      <Label htmlFor="gl-input">GL (Approver)</Label>
+      <Label htmlFor="gl-account-input">GL Account</Label>
 
       {isFieldEditing ? (
         <Input
-          id="gl-input"
-          value={glValue}
-          onChange={(e) => setGlValue(e.target.value)}
-          placeholder="GL code or approver"
+          id="gl-account-input"
+          value={glAccount}
+          onChange={(e) => setGlAccount(sanitizeGlAccount(e.target.value))}
+          inputMode="numeric"
+          placeholder="14-digit account (dashes allowed)"
         />
       ) : (
-        <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm">
-          {glValue || "-"}
+        <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm font-mono">
+          {glAccount || "-"}
         </div>
       )}
     </div>
 
     <div className="space-y-2">
-      <Label htmlFor="dept-input">Department</Label>
+      <Label htmlFor="gl-approver-input">GL Approver</Label>
 
       {isFieldEditing ? (
         <Input
-          id="dept-input"
-          value={departmentValue}
-          onChange={(e) => setDepartmentValue(e.target.value)}
-          placeholder="Department name"
+          id="gl-approver-input"
+          value={glApprover}
+          onChange={(e) => setGlApprover(e.target.value)}
+          placeholder="Approver name"
         />
       ) : (
         <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm">
-          {departmentValue || "-"}
+          {glApprover || "-"}
         </div>
       )}
     </div>

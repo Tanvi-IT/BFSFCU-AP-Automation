@@ -156,6 +156,7 @@ export const updateInvoiceRoute: MethodRoute = {
     if (typeof body['totalAmount'] === 'number') fields.totalAmount = body['totalAmount'];
     if (typeof body['vendorId'] === 'string') fields.vendorId = body['vendorId'];
     if (typeof body['glCode'] === 'string') fields.glCode = body['glCode'];
+    if (typeof body['glApprover'] === 'string') fields.glApprover = body['glApprover'];
     if (typeof body['departmentName'] === 'string') {
       fields.departmentName = body['departmentName'];
     }
@@ -191,12 +192,12 @@ app.http('vendor-apply-coding', {
 
     const body = await readJson(req);
     const glCode = typeof body['glCode'] === 'string' ? body['glCode'] : null;
-    const departmentId =
-      typeof body['departmentId'] === 'string' ? body['departmentId'] : null;
+    const glApprover =
+      typeof body['glApprover'] === 'string' ? body['glApprover'] : null;
 
     const updated = await workflow.applyCodingToVendor(
       vendorId,
-      { glCode, departmentId },
+      { glCode, glApprover },
       user.id
     );
 

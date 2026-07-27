@@ -9,11 +9,15 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { invoicesApi } from "@/services/invoices";
+import { vendorsApi } from "@/services";
 import { useAuth } from "@/hooks/useAuth";
 import { getReasonLabels } from "@/lib/invoiceReasons";
+import { sanitizeGlAccount } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { Loader2, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Building2, DollarSign, FileText, Calendar, Landmark, Pencil, X, Save } from "lucide-react";
 import { InvoiceAuditTrail } from "@/components/poc/InvoiceAuditTrail";
 import { InvoiceNotes } from "@/components/InvoiceNotes";
 import { DuplicateWarningCard } from "@/components/poc/DuplicateWarningCard";
@@ -36,6 +40,8 @@ interface ExceptionInvoice {
   sanitized_filename: string | null;
   ach_routing_number: string | null;
   ach_account_number: string | null;
+  gl_code: string | null;
+  gl_approver: string | null;
   sender_email: string | null;
   tax_flagged: boolean;
   tax_flag_reason: string | null;
@@ -66,12 +72,22 @@ export default function ExceptionDetail() {
   const [declineReason, setDeclineReason] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editFields, setEditFields] = useState({ invoice_number: "", total_amount: "", invoice_date: "", due_date: "" });
+  // GL coding: Account (14-digit number, dashes allowed) + Approver (name).
+  const [glAccount, setGlAccount] = useState("");
+  const [glApprover, setGlApprover] = useState("");
+  const [applyToAllVendorInvoices, setApplyToAllVendorInvoices] = useState(true);
   const [duplicateOriginal, setDuplicateOriginal] = useState<DuplicateOriginal | null>(null);
 
   useEffect(() => {
     if (!id) return;
     fetchInvoice(id);
   }, [id]);
+
+  useEffect(() => {
+    if (!invoice) return;
+    setGlAccount(invoice.gl_code || "");
+    setGlApprover(invoice.gl_approver || "");
+  }, [invoice?.id]);
 
   useEffect(() => {
     if (!invoice?.duplicate_of) { setDuplicateOriginal(null); return; }
@@ -168,7 +184,20 @@ export default function ExceptionDetail() {
           : {}),
         ...(editFields.invoice_date ? { invoiceDate: editFields.invoice_date } : {}),
         ...(editFields.due_date ? { dueDate: editFields.due_date } : {}),
+        glCode: glAccount.trim(),
+        glApprover: glApprover.trim(),
       });
+
+      // Apply the same GL coding to every other invoice from this vendor.
+      if (applyToAllVendorInvoices && invoice.vendor?.id) {
+        await vendorsApi
+          .applyCoding(invoice.vendor.id, {
+            glCode: glAccount.trim() || null,
+            glApprover: glApprover.trim() || null,
+          })
+          .catch((err) => console.error("Error updating vendor invoices:", err));
+      }
+
       toast({ title: "Invoice Updated", description: "Changes saved successfully." });
       setIsEditing(false);
       fetchInvoice(invoice.id);
@@ -294,7 +323,7 @@ export default function ExceptionDetail() {
               </TabsList>
               <TabsContent value="review" className="p-0 mt-0 space-y-4">
             <Card>
-              <CardContent className="pt-4 space-y-3">
+              <CardContent className="pt-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">Invoice Details</h3>
                   <div className="flex items-center gap-2">
@@ -302,79 +331,184 @@ export default function ExceptionDetail() {
                       {duplicateOriginal?.invoice_number || invoice.invoice_number}
                     </Badge>
                     {(isAdmin || isSuperAdmin) && (
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        setEditFields({
-                          invoice_number: invoice.invoice_number || "",
-                          total_amount: String(invoice.total_amount || ""),
-                          invoice_date: invoice.invoice_date || "",
-                          due_date: invoice.due_date || "",
-                        });
-                        setIsEditing(!isEditing);
-                      }}>
-                        {isEditing ? "Cancel" : "Edit"}
-                      </Button>
-                    )}
-                    {isEditing && (
-                      <Button size="sm" onClick={handleSaveEdit} disabled={isActioning}>Save</Button>
+                      !isEditing ? (
+                        <Button variant="outline" size="sm" className="gap-1" onClick={() => {
+                          setEditFields({
+                            invoice_number: invoice.invoice_number || "",
+                            total_amount: String(invoice.total_amount || ""),
+                            invoice_date: invoice.invoice_date || "",
+                            due_date: invoice.due_date || "",
+                          });
+                          setIsEditing(true);
+                        }}>
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                      ) : (
+                        <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" onClick={() => setIsEditing(false)}>
+                          <X className="h-3.5 w-3.5" />
+                          Cancel
+                        </Button>
+                      )
                     )}
                   </div>
                 </div>
                 <Separator />
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Vendor</p>
-                    <p className="font-medium">{invoice.vendor?.name || "Unknown"}</p>
-                    {invoice.vendor?.id && (
-                      <p className="text-xs text-muted-foreground mt-0.5">ID: {invoice.vendor.id}</p>
-                    )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-start gap-2">
+                    <Building2 className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div className="flex-1">
+                      <p className="text-xs text-muted-foreground">Vendor</p>
+                      <p className="font-medium">{invoice.vendor?.name || "Unknown"}</p>
+                      {invoice.vendor?.id && (
+                        <p className="text-xs text-muted-foreground mt-0.5">ID: {invoice.vendor.id}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Amount</p>
-                    {isEditing ? (
-                      <input className="w-full border rounded px-2 py-1 text-sm mt-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
-                        value={editFields.total_amount}
-                        onChange={e => setEditFields(f => ({ ...f, total_amount: e.target.value }))} />
-                    ) : (
-                      <p className="font-medium">{invoice.currency} {invoice.total_amount?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                    )}
+                  <div className="flex items-start gap-2">
+                    <DollarSign className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div className="flex-1">
+                      <p className="text-xs text-muted-foreground">Amount</p>
+                      {isEditing ? (
+                        <input className="w-full border rounded px-2 py-1 text-sm mt-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                          value={editFields.total_amount}
+                          onChange={e => setEditFields(f => ({ ...f, total_amount: e.target.value }))} />
+                      ) : (
+                        <p className="font-medium">{invoice.currency} {invoice.total_amount?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Invoice #</p>
-                    {isEditing ? (
-                      <input className="w-full border rounded px-2 py-1 text-sm mt-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
-                        value={editFields.invoice_number}
-                        onChange={e => setEditFields(f => ({ ...f, invoice_number: e.target.value }))} />
-                    ) : (
-                      <p className="font-medium">{duplicateOriginal?.invoice_number || invoice.invoice_number}</p>
-                    )}
+                  <div className="flex items-start gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div className="flex-1">
+                      <p className="text-xs text-muted-foreground">Invoice #</p>
+                      {isEditing ? (
+                        <input className="w-full border rounded px-2 py-1 text-sm mt-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                          value={editFields.invoice_number}
+                          onChange={e => setEditFields(f => ({ ...f, invoice_number: e.target.value }))} />
+                      ) : (
+                        <p className="font-medium">{duplicateOriginal?.invoice_number || invoice.invoice_number}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Invoice Date</p>
-                    {isEditing ? (
-                      <input type="date" className="w-full border rounded px-2 py-1 text-sm mt-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
-                        value={editFields.invoice_date}
-                        onChange={e => setEditFields(f => ({ ...f, invoice_date: e.target.value }))} />
-                    ) : (
-                      <p className="font-medium">{formatDate(invoice.invoice_date)}</p>
-                    )}
+                  <div className="flex items-start gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div className="flex-1">
+                      <p className="text-xs text-muted-foreground">Invoice Date</p>
+                      {isEditing ? (
+                        <input type="date" className="w-full border rounded px-2 py-1 text-sm mt-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                          value={editFields.invoice_date}
+                          onChange={e => setEditFields(f => ({ ...f, invoice_date: e.target.value }))} />
+                      ) : (
+                        <p className="font-medium">{formatDate(invoice.invoice_date)}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Due Date</p>
-                    {isEditing ? (
-                      <input type="date" className="w-full border rounded px-2 py-1 text-sm mt-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
-                        value={editFields.due_date}
-                        onChange={e => setEditFields(f => ({ ...f, due_date: e.target.value }))} />
-                    ) : (
-                      <p className="font-medium">{formatDate(invoice.due_date)}</p>
-                    )}
+                  {/* ACH Routing # — always shown (empty as "—"), matching the
+                      Low/High Confidence detail pages. */}
+                  <div className="flex items-start gap-2">
+                    <Landmark className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div className="flex-1">
+                      <p className="text-xs text-muted-foreground">ACH Routing #</p>
+                      <p className="font-medium font-mono">{invoice.ach_routing_number || "—"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div className="flex-1">
+                      <p className="text-xs text-muted-foreground">Due Date</p>
+                      {isEditing ? (
+                        <input type="date" className="w-full border rounded px-2 py-1 text-sm mt-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                          value={editFields.due_date}
+                          onChange={e => setEditFields(f => ({ ...f, due_date: e.target.value }))} />
+                      ) : (
+                        <p className="font-medium">{formatDate(invoice.due_date)}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Landmark className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div className="flex-1">
+                      <p className="text-xs text-muted-foreground">ACH Account #</p>
+                      <p className="font-medium font-mono">{invoice.ach_account_number || "—"}</p>
+                    </div>
                   </div>
                   {invoice.status === "approved" && invoice.transaction_date && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Transaction Date</p>
-                    <p className="font-medium">{formatDate(invoice.transaction_date)}</p>
-                  </div>
+                    <div className="flex items-start gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground mt-1" />
+                      <div className="flex-1">
+                        <p className="text-xs text-muted-foreground">Transaction Date</p>
+                        <p className="font-medium">{formatDate(invoice.transaction_date)}</p>
+                      </div>
+                    </div>
                   )}
                 </div>
+
+                {/* GL coding: Account + Approver — same block as the Low/High
+                    Confidence review pages. */}
+                <div className="border-t pt-4">
+                  <h4 className="font-semibold mb-4">Assignment</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="gl-account-input">GL Account</Label>
+                      {isEditing ? (
+                        <Input
+                          id="gl-account-input"
+                          value={glAccount}
+                          onChange={(e) => setGlAccount(sanitizeGlAccount(e.target.value))}
+                          inputMode="numeric"
+                          placeholder="14-digit account (dashes allowed)"
+                        />
+                      ) : (
+                        <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm font-mono">
+                          {glAccount || "-"}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="gl-approver-input">GL Approver</Label>
+                      {isEditing ? (
+                        <Input
+                          id="gl-approver-input"
+                          value={glApprover}
+                          onChange={(e) => setGlApprover(e.target.value)}
+                          placeholder="Approver name"
+                        />
+                      ) : (
+                        <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm">
+                          {glApprover || "-"}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {invoice.vendor?.name && (
+                    <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/50 mt-4">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="apply-all-toggle" className="text-sm font-medium cursor-pointer">
+                          Apply to all {invoice.vendor.name} invoices
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          {applyToAllVendorInvoices
+                            ? "Changes will update all invoices from this vendor"
+                            : "Changes will only apply to this invoice"}
+                        </p>
+                      </div>
+                      <Switch
+                        id="apply-all-toggle"
+                        checked={applyToAllVendorInvoices}
+                        onCheckedChange={setApplyToAllVendorInvoices}
+                        disabled={!isEditing}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {isEditing && (
+                  <Button onClick={handleSaveEdit} disabled={isActioning} className="w-full">
+                    {isActioning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                    Save Changes
+                  </Button>
+                )}
                 {(invoice.system_filename || invoice.sanitized_filename) && (
                   <>
                     <Separator />
@@ -383,24 +517,6 @@ export default function ExceptionDetail() {
                       <p className="text-xs font-mono text-muted-foreground">
                         {invoice.system_filename || invoice.sanitized_filename}
                       </p>
-                    </div>
-                  </>
-                )}
-                {invoice.ach_routing_number && (
-                  <>
-                    <Separator />
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">ACH Routing #</p>
-                      <p className="text-xs font-mono text-muted-foreground">{invoice.ach_routing_number}</p>
-                    </div>
-                  </>
-                )}
-                {invoice.ach_account_number && (
-                  <>
-                    <Separator />
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">ACH Account #</p>
-                      <p className="text-xs font-mono text-muted-foreground">{invoice.ach_account_number}</p>
                     </div>
                   </>
                 )}

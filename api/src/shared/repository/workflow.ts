@@ -234,6 +234,7 @@ export interface EditableFields {
   totalAmount?: number | null;
   vendorId?: string | null;
   glCode?: string | null;
+  glApprover?: string | null;
   departmentName?: string | null;
   departmentId?: string | null;
   achRoutingNumber?: string | null;
@@ -278,7 +279,8 @@ export async function updateFields(
               department_id      = COALESCE($9, department_id),
               ach_routing_number = COALESCE($10, ach_routing_number),
               ach_account_number = COALESCE($11, ach_account_number),
-              system_filename    = COALESCE($12, system_filename)
+              system_filename    = COALESCE($12, system_filename),
+              gl_approver        = COALESCE($13, gl_approver)
         WHERE id = $1`,
       [
         invoiceId,
@@ -293,6 +295,7 @@ export async function updateFields(
         fields.achRoutingNumber ?? null,
         fields.achAccountNumber ?? null,
         fields.systemFilename ?? null,
+        fields.glApprover ?? null,
       ]
     );
 
@@ -320,18 +323,18 @@ export async function updateFields(
  */
 export async function applyCodingToVendor(
   vendorId: string,
-  coding: { glCode: string | null; departmentId: string | null },
+  coding: { glCode: string | null; glApprover: string | null },
   actorId: string
 ): Promise<number> {
   return transaction(async (client) => {
     const result = await client.query<{ id: string }>(
       `UPDATE invoices
-          SET gl_code       = $2,
-              department_id = $3
+          SET gl_code     = $2,
+              gl_approver = $3
         WHERE vendor_id = $1
           AND status <> 'approved'
         RETURNING id`,
-      [vendorId, coding.glCode, coding.departmentId]
+      [vendorId, coding.glCode, coding.glApprover]
     );
 
     await client.query(

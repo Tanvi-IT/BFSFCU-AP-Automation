@@ -81,7 +81,7 @@ export const vendorsApi = {
     }),
 
   /** Apply GL coding to every non-approved invoice for this vendor. */
-  applyCoding: (id: string, coding: { glCode: string | null; departmentId: string | null }) =>
+  applyCoding: (id: string, coding: { glCode: string | null; glApprover: string | null }) =>
     api.post<{ vendorId: string; invoicesUpdated: number }>(
       `/vendors/${id}/apply-coding`,
       coding
