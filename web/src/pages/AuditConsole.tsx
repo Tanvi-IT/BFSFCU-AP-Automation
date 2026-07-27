@@ -49,9 +49,27 @@ const STATUSES: { value: string; label: string }[] = [
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
   if (status === "approved") return "default";
-  if (status === "declined" || status === "exception") return "destructive";
-  if (status === "queued" || status === "processing") return "secondary";
+  if (status === "declined" || status === "rejected" || status === "exception") return "destructive";
   return "outline";
+}
+
+/**
+ * The audit column collapses internal statuses to the four states a reviewer
+ * thinks in: an invoice in review (low OR high confidence, still queued or
+ * processing) is "Submitted"; the rest are the settled/escalated states.
+ */
+function auditStatusLabel(status: string): string {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "rejected":
+    case "declined":
+      return "Declined";
+    case "exception":
+      return "Exception";
+    default:
+      return "Submitted";
+  }
 }
 
 function actionVariant(action: string): "default" | "secondary" | "destructive" | "outline" {
@@ -313,7 +331,7 @@ export default function AuditConsole() {
                       <TableCell className="font-medium">{inv.invoice_number || "—"}</TableCell>
                       <TableCell>{inv.vendor_name || "—"}</TableCell>
                       <TableCell>
-                        <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
+                        <Badge variant={statusVariant(inv.status)}>{auditStatusLabel(inv.status)}</Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {inv.currency} {inv.total_amount}
