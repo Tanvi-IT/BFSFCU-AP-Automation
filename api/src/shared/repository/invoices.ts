@@ -149,6 +149,8 @@ export interface ListFilters {
   dateTo?: string;
   /** Which timestamp the range filters and orders by. Defaults to `created_at`. */
   dateField?: DateField;
+  /** Sort direction on `dateField`. Defaults to `desc` (newest first). */
+  order?: 'asc' | 'desc';
   limit: number;
   offset: number;
 }
@@ -179,6 +181,10 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
       ? filters.dateField
       : 'created_at';
 
+  // Only two literal values are ever concatenated, chosen from the caller's
+  // enum — never an arbitrary string.
+  const order: 'ASC' | 'DESC' = filters.order === 'asc' ? 'ASC' : 'DESC';
+
   if (filters.dateFrom) {
     params.push(filters.dateFrom);
     where.push(`i.${dateField} >= $${params.length}::date`);
@@ -204,7 +210,7 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
        FROM invoices i
        LEFT JOIN vendors v ON v.id = i.vendor_id
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY i.${dateField} DESC NULLS LAST
+      ORDER BY i.${dateField} ${order} NULLS LAST
       LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );

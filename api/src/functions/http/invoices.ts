@@ -77,6 +77,12 @@ app.http('invoices', {
         }
         const dateField = (dateFieldRaw as invoices.DateField | null) ?? undefined;
 
+        const orderRaw = url.searchParams.get('order');
+        if (orderRaw && orderRaw !== 'asc' && orderRaw !== 'desc') {
+          throw AppError.validation("order must be 'asc' or 'desc'");
+        }
+        const order = (orderRaw as 'asc' | 'desc' | null) ?? undefined;
+
         const rows = await invoices.list({
           limit: Number.isFinite(limit) ? limit : 50,
           offset: Number.isFinite(offset) ? offset : 0,
@@ -85,6 +91,7 @@ app.http('invoices', {
           ...(dateFrom ? { dateFrom } : {}),
           ...(dateTo ? { dateTo } : {}),
           ...(dateField ? { dateField } : {}),
+          ...(order ? { order } : {}),
         });
 
         return ok({ invoices: rows, limit, offset });

@@ -30,6 +30,12 @@ import { Loader2, Search, Shield, FileText } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { invoicesApi, type Invoice } from "@/services/invoices";
 import { activityApi } from "@/services";
+import {
+  DateRangePresetFilter,
+  presetToRange,
+  DEFAULT_DATE_PRESET,
+  type DatePreset,
+} from "@/components/DateRangePresetFilter";
 
 const STATUSES = ["queued", "processing", "validated", "submitted", "approved", "declined", "exception"];
 
@@ -193,15 +199,23 @@ export default function AuditConsole() {
   const { isAdmin } = useAuth();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>(DEFAULT_DATE_PRESET);
   const [selected, setSelected] = useState<Invoice | null>(null);
 
+  const dateRange = presetToRange(datePreset);
+
   const { data: invoices, isLoading } = useQuery({
-    queryKey: ["audit-invoices", search, status],
+    queryKey: ["audit-invoices", search, status, datePreset],
     queryFn: () =>
       invoicesApi.list({
         limit: 500,
+        // Audit records read oldest-first, filtered on upload time.
+        dateField: "created_at",
+        order: "asc",
         ...(search ? { search } : {}),
         ...(status ? { status: status as Invoice["status"] } : {}),
+        ...(dateRange.from ? { dateFrom: dateRange.from } : {}),
+        ...(dateRange.to ? { dateTo: dateRange.to } : {}),
       }),
   });
 
@@ -251,6 +265,9 @@ export default function AuditConsole() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="mt-4">
+              <DateRangePresetFilter value={datePreset} onChange={setDatePreset} label="Uploaded" />
             </div>
           </CardContent>
         </Card>

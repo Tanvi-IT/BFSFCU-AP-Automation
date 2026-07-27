@@ -808,6 +808,7 @@ export default function LowConfidenceQueue() {
                   status={currentInvoice.status}
                   supplementalCount={currentInvoice.supplemental_pdf_count}
                   onAttached={fetchLowConfidenceInvoices}
+                  onInvoicePdfUpdated={fetchPdfUrl}
                 />
               )}
             </CardContent>

@@ -142,6 +142,8 @@ export interface ListParams {
   dateFrom?: string;
   dateTo?: string;
   dateField?: DateField;
+  /** Sort direction on `dateField`. Defaults to `desc` (newest first). */
+  order?: "asc" | "desc";
   limit?: number;
   offset?: number;
 }
@@ -160,6 +162,7 @@ export const invoicesApi = {
         dateFrom: params.dateFrom,
         dateTo: params.dateTo,
         dateField: params.dateField,
+        order: params.order,
         limit: params.limit ?? 50,
         offset: params.offset ?? 0,
       })
@@ -179,10 +182,13 @@ export const invoicesApi = {
     add: (invoiceId: string, file: File) => {
       const form = new FormData();
       form.append("file", file);
-      return api.upload<{ attachment: Attachment; supplementalCount: number }>(
-        `/invoices/${invoiceId}/supplemental`,
-        form
-      );
+      return api.upload<{
+        attachment: Attachment;
+        supplementalCount: number;
+        /** Pages appended to the invoice PDF, and whether the PDF was rewritten. */
+        pagesAppended?: number;
+        invoicePdfUpdated?: boolean;
+      }>(`/invoices/${invoiceId}/supplemental`, form);
     },
 
     /** Short-lived URL for viewing one attachment. */

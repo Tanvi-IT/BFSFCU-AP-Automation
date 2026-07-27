@@ -675,28 +675,32 @@ const InvoiceDetail = () => {
           </Card>
         )}
 
-        {/* Variation Analysis & Vendor Risk - full width stacked */}
-        <div className="space-y-6">
-          <VariationDetailCard
-            variationScore={invoice.variationScore}
-            variationFlags={invoice.variationFlags}
-            anomalyCount={invoice.anomalyCount ?? anomalies.length}
-            anomalies={anomalies}
-            isCritical={invoice.isCritical}
-            autoRouted={invoice.autoRouted}
-            baselineComparison={vendorBaseline?.avg_invoice_amount ? {
-              currentAmount: invoice.totalAmount,
-              avgAmount: vendorBaseline.avg_invoice_amount,
-              percentDiff: vendorBaseline.avg_invoice_amount > 0 
-                ? ((invoice.totalAmount - vendorBaseline.avg_invoice_amount) / vendorBaseline.avg_invoice_amount) * 100 
-                : undefined,
-            } : undefined}
-          />
-          <VendorRiskSnapshot 
-            vendorId={invoice.vendorId} 
-            vendorName={invoice.vendor?.name}
-          />
-        </div>
+        {/* Variation Analysis & Vendor Risk - full width stacked.
+            Hidden for approved invoices: once an invoice is approved these
+            pre-approval risk signals are no longer actionable. */}
+        {invoice.status?.toLowerCase() !== "approved" && (
+          <div className="space-y-6">
+            <VariationDetailCard
+              variationScore={invoice.variationScore}
+              variationFlags={invoice.variationFlags}
+              anomalyCount={invoice.anomalyCount ?? anomalies.length}
+              anomalies={anomalies}
+              isCritical={invoice.isCritical}
+              autoRouted={invoice.autoRouted}
+              baselineComparison={vendorBaseline?.avg_invoice_amount ? {
+                currentAmount: invoice.totalAmount,
+                avgAmount: vendorBaseline.avg_invoice_amount,
+                percentDiff: vendorBaseline.avg_invoice_amount > 0
+                  ? ((invoice.totalAmount - vendorBaseline.avg_invoice_amount) / vendorBaseline.avg_invoice_amount) * 100
+                  : undefined,
+              } : undefined}
+            />
+            <VendorRiskSnapshot
+              vendorId={invoice.vendorId}
+              vendorName={invoice.vendor?.name}
+            />
+          </div>
+        )}
 
         {anomalies.length > 0 && (
           <Card>

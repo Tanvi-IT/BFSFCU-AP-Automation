@@ -14,7 +14,12 @@ import { StatusBadge, RiskBadge } from "@/components/StatusBadge";
 import { VariationBadge } from "@/components/VariationBadge";
 import { ERPExportButton } from "@/components/ERPExportButton";
 import { invoicesApi } from "@/services/invoices";
-import { DateRangeFilter, EMPTY_DATE_RANGE, type DateRange } from "@/components/DateRangeFilter";
+import {
+  DateRangePresetFilter,
+  presetToRange,
+  DEFAULT_DATE_PRESET,
+  type DatePreset,
+} from "@/components/DateRangePresetFilter";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -89,7 +94,8 @@ const InvoiceList = () => {
   const [riskFilter, setRiskFilter] = useState<string>("all");
   const [dueDateFilter, setDueDateFilter] = useState<string>("all");
   const [taxFlagFilter, setTaxFlagFilter] = useState<string>("all");
-  const [dateRange, setDateRange] = useState<DateRange>(EMPTY_DATE_RANGE);
+  const [datePreset, setDatePreset] = useState<DatePreset>(DEFAULT_DATE_PRESET);
+  const dateRange = presetToRange(datePreset);
 
   // The sidebar's "Approved" entry is this page at ?status=approved. It is a
   // historical record rather than a working list, so it gets a search box and a
@@ -163,6 +169,8 @@ const InvoiceList = () => {
         ...(isApprovedView
           ? {
               dateField: 'approved_at' as const,
+              // Approved history reads oldest-first, matching the server order.
+              order: 'asc' as const,
               ...(appliedSearch ? { search: appliedSearch } : {}),
               ...(dateRange.from ? { dateFrom: dateRange.from } : {}),
               ...(dateRange.to ? { dateTo: dateRange.to } : {}),
@@ -172,10 +180,13 @@ const InvoiceList = () => {
       // Approved view sorts by approval time; other views by creation time.
       const sortColumn = statusFilter === 'approved' ? 'approved_at' : 'created_at';
       const data = [...rowsRaw]
-        .sort((a, b) =>
-          new Date(String(b[sortColumn] ?? b.created_at)).getTime() -
-          new Date(String(a[sortColumn] ?? a.created_at)).getTime()
-        )
+        .sort((a, b) => {
+          const av = new Date(String(a[sortColumn] ?? a.created_at)).getTime();
+          const bv = new Date(String(b[sortColumn] ?? b.created_at)).getTime();
+          // Approved history is ascending (oldest first); every other view stays
+          // newest-first.
+          return isApprovedView ? av - bv : bv - av;
+        })
         .map((r) => ({
           ...r,
           // Keyed on the name, not on vendor_id: the API already falls back to
@@ -445,7 +456,7 @@ const InvoiceList = () => {
                 className="pl-9"
               />
             </div>
-            <DateRangeFilter value={dateRange} onChange={setDateRange} label="Approved" />
+            <DateRangePresetFilter value={datePreset} onChange={setDatePreset} label="Approved" />
           </div>
         ) : (
         <Card>

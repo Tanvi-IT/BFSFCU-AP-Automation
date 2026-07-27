@@ -8,12 +8,18 @@ interface SupplementalAttachmentProps {
   status: string;
   supplementalCount?: number | null;
   onAttached?: (newCount?: number) => void;
+  /**
+   * Called after a supplemental PDF is appended to the invoice, so the caller
+   * can refresh the on-screen PDF viewer to show the newly added pages.
+   */
+  onInvoicePdfUpdated?: () => void;
 }
 
 export function SupplementalAttachment({
   invoiceId,
   status,
   onAttached,
+  onInvoicePdfUpdated,
 }: SupplementalAttachmentProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -49,6 +55,8 @@ export function SupplementalAttachment({
       const res = await invoicesApi.supplemental.add(invoiceId, file);
       await load();
       onAttached?.(res.supplementalCount);
+      // The upload appended pages to the invoice PDF; refresh the viewer.
+      if (res.invoicePdfUpdated) onInvoicePdfUpdated?.();
     } catch (err) {
       setError((err as Error)?.message || "Failed to attach document");
     } finally {
@@ -131,7 +139,7 @@ export function SupplementalAttachment({
         <>
           <input
             type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.doc,.docx,.xls,.xlsx"
+            accept=".pdf,application/pdf"
             style={{ display: "none" }}
             ref={fileInputRef}
             onChange={handleUpload}
@@ -145,15 +153,18 @@ export function SupplementalAttachment({
             {isUploading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Attaching...
+                Appending...
               </>
             ) : (
               <>
                 <Paperclip className="h-4 w-4 mr-2" />
-                Attach Supplemental Document
+                Attach Supplemental PDF
               </>
             )}
           </Button>
+          <p className="text-xs text-muted-foreground">
+            Pages are added to the end of the invoice PDF.
+          </p>
         </>
       )}
 

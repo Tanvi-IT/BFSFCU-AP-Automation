@@ -2,19 +2,33 @@
  * Supplemental documents on an invoice.
  *
  *   GET  /api/invoices/{id}/supplemental                 list attachments
- *   POST /api/invoices/{id}/supplemental                 attach a document
+ *   POST /api/invoices/{id}/supplemental                 append a PDF's pages
  *   GET  /api/invoices/{id}/supplemental/{attId}/file    short-lived view URL
  *   DELETE /api/invoices/{id}/supplemental/{attId}       remove an attachment
  *
- * Each attachment is stored as its own blob. Attaching is blocked once the
- * invoice is approved or declined — its supporting documents are then settled.
+ * Attaching a supplemental document now APPENDS its pages to the bottom of the
+ * invoice's own PDF, so a reviewer sees one continuous document. The uploaded
+ * file must therefore be a PDF, and the invoice's stored document must be a PDF
+ * too. A copy of each appended file is also kept as its own blob + row, so the
+ * original is downloadable and the append history is auditable. Removing that
+ * record deletes the copy; it does not un-append the pages already merged in.
+ *
+ * Appending is blocked once the invoice is approved or declined — its
+ * supporting documents are then settled.
  */
 
 import { app } from '@azure/functions';
+import { PDFDocument } from 'pdf-lib';
 import { createHandler, createMethodHandler, ok } from '../../shared/handler';
 import { Roles } from '../../shared/authorize';
 import { AppError } from '../../shared/errors';
-import { buildBlobPath, uploadBlob, getReadUrl, deleteBlob } from '../../shared/blob';
+import {
+  buildBlobPath,
+  uploadBlob,
+  downloadBlob,
+  getReadUrl,
+  deleteBlob,
+} from '../../shared/blob';
 import * as invoices from '../../shared/repository/invoices';
 import * as attachments from '../../shared/repository/attachments';
 import { recordAudit } from '../../shared/repository/activity';
@@ -22,18 +36,12 @@ import { randomUUID } from 'node:crypto';
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB
 
-// Supporting documents are more varied than invoices themselves — a PO, a
-// receipt, a signed approval — so the type list is broader.
-const ALLOWED_TYPES: Record<string, string> = {
-  'application/pdf': 'pdf',
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/tiff': 'tif',
-  'application/msword': 'doc',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-  'application/vnd.ms-excel': 'xls',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-};
+// Pages are merged into the invoice PDF, so only PDFs can be appended.
+function looksLikePdf(bytes: Buffer): boolean {
+  // A PDF starts with "%PDF-" (some files carry a few leading bytes, so scan
+  // the first 1 KB rather than requiring it at offset 0).
+  return bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'));
+}
 
 // A settled invoice's supporting documents are settled too.
 const LOCKED_STATUSES = new Set(['approved', 'rejected']);
@@ -79,11 +87,7 @@ app.http('invoice-supplemental', {
         }
 
         const contentType = file.type || 'application/octet-stream';
-        if (!ALLOWED_TYPES[contentType]) {
-          throw AppError.validation(
-            `Unsupported file type "${contentType}". Allowed: PDF, image, Word, Excel.`
-          );
-        }
+        const filename = (file as File).name || 'attachment.pdf';
 
         const bytes = Buffer.from(await file.arrayBuffer());
         if (bytes.length === 0) throw AppError.validation('The uploaded file is empty');
@@ -91,15 +95,55 @@ app.http('invoice-supplemental', {
           throw AppError.validation('File exceeds the 20 MB limit');
         }
 
-        const filename = (file as File).name || 'attachment';
+        // The pages are appended to the invoice PDF, so the upload must be a PDF.
+        if (contentType !== 'application/pdf' && !looksLikePdf(bytes)) {
+          throw AppError.validation(
+            'Only PDF files can be appended to an invoice. Convert the document to PDF and try again.'
+          );
+        }
+
+        // Merge the uploaded pages onto the end of the invoice's own PDF.
+        const invoiceBlobPath = (invoice as { blob_path?: string }).blob_path;
+        if (!invoiceBlobPath) {
+          throw AppError.conflict('This invoice has no stored document to append to.');
+        }
+        const invoiceBytes = await downloadBlob(invoiceBlobPath);
+        if (!looksLikePdf(invoiceBytes)) {
+          throw AppError.conflict(
+            'Pages can only be appended when the invoice document itself is a PDF.'
+          );
+        }
+
+        let mergedBytes: Buffer;
+        let pagesAppended: number;
+        try {
+          const target = await PDFDocument.load(invoiceBytes, { ignoreEncryption: true });
+          const source = await PDFDocument.load(bytes, { ignoreEncryption: true });
+          const copied = await target.copyPages(source, source.getPageIndices());
+          copied.forEach((p) => target.addPage(p));
+          pagesAppended = copied.length;
+          mergedBytes = Buffer.from(await target.save());
+        } catch (err) {
+          log.error('Failed to merge supplemental PDF', { invoiceId: id, error: String(err) });
+          throw AppError.validation(
+            'The uploaded PDF could not be read. It may be corrupt or password-protected.'
+          );
+        }
+
+        // Overwrite the invoice document in place (same blob path) so every
+        // existing viewer/link now returns the combined document.
+        await uploadBlob(invoiceBlobPath, mergedBytes, 'application/pdf');
+
+        // Keep a copy of exactly what was appended, so the original is
+        // downloadable and the append history is visible.
         const blobPath = buildBlobPath(filename, randomUUID());
-        await uploadBlob(blobPath, bytes, contentType);
+        await uploadBlob(blobPath, bytes, 'application/pdf');
 
         const row = await attachments.add({
           invoiceId: id,
           blobPath,
           originalFilename: filename,
-          contentType,
+          contentType: 'application/pdf',
           bytes: bytes.length,
           uploadedBy: user.id,
         });
@@ -109,15 +153,24 @@ app.http('invoice-supplemental', {
           entityId: id,
           action: 'supplemental_added',
           userId: user.id,
-          metadata: { filename, bytes: bytes.length },
+          metadata: { filename, bytes: bytes.length, pagesAppended, mergedIntoInvoice: true },
         });
 
-        log.info('Supplemental document attached', { invoiceId: id, attachmentId: row.id });
+        log.info('Supplemental PDF appended to invoice', {
+          invoiceId: id,
+          attachmentId: row.id,
+          pagesAppended,
+        });
 
         // The updated count so the caller can refresh its badge without a
         // second request.
         const all = await attachments.list(id);
-        return ok({ attachment: row, supplementalCount: all.length });
+        return ok({
+          attachment: row,
+          supplementalCount: all.length,
+          pagesAppended,
+          invoicePdfUpdated: true,
+        });
       },
     },
   }),
