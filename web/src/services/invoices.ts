@@ -278,4 +278,14 @@ export const invoicesApi = {
       submitAfterSave?: boolean;
     }
   ) => api.patch<{ id: string; updated: string[] }>(`/invoices/${id}`, fields),
+
+  /**
+   * GL coding (account + approver) from this vendor's last approved invoice,
+   * used to pre-fill the review queues. Returns nulls when the vendor has no
+   * prior approved invoice with coding.
+   */
+  suggestedCoding: (id: string) =>
+    api.get<{ glCode: string | null; glApprover: string | null }>(
+      `/invoices/${id}/suggested-coding`
+    ),
 };

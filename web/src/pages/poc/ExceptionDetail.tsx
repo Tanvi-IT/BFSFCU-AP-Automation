@@ -87,6 +87,18 @@ export default function ExceptionDetail() {
     if (!invoice) return;
     setGlAccount(invoice.gl_code || "");
     setGlApprover(invoice.gl_approver || "");
+    // Pre-fill missing GL coding from this vendor's last approved invoice.
+    if (!invoice.gl_code || !invoice.gl_approver) {
+      invoicesApi
+        .suggestedCoding(invoice.id)
+        .then((s) => {
+          const code = s.glCode;
+          const approver = s.glApprover;
+          if (!invoice.gl_code && code) setGlAccount((prev) => prev || code);
+          if (!invoice.gl_approver && approver) setGlApprover((prev) => prev || approver);
+        })
+        .catch(() => {});
+    }
   }, [invoice?.id]);
 
   useEffect(() => {

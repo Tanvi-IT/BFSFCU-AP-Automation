@@ -167,8 +167,8 @@ const InvoiceList = () => {
         ...(isApprovedView
           ? {
               dateField: 'approved_at' as const,
-              // Approved history reads oldest-first, matching the server order.
-              order: 'asc' as const,
+              // Newest-approved-first, matching the server order and every queue.
+              order: 'desc' as const,
               ...(appliedSearch ? { search: appliedSearch } : {}),
               ...(dateRange.from ? { dateFrom: dateRange.from } : {}),
               ...(dateRange.to ? { dateTo: dateRange.to } : {}),
@@ -181,9 +181,9 @@ const InvoiceList = () => {
         .sort((a, b) => {
           const av = new Date(String(a[sortColumn] ?? a.created_at)).getTime();
           const bv = new Date(String(b[sortColumn] ?? b.created_at)).getTime();
-          // Approved history is ascending (oldest first); every other view stays
-          // newest-first.
-          return isApprovedView ? av - bv : bv - av;
+          // Every view is newest-first (approved view by approval time, others by
+          // creation time).
+          return bv - av;
         })
         .map((r) => ({
           ...r,

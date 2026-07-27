@@ -217,9 +217,9 @@ export default function AuditConsole() {
     queryFn: () =>
       invoicesApi.list({
         limit: 500,
-        // Audit records read oldest-first, filtered on upload time.
+        // Newest-first, filtered on upload time — consistent with every queue.
         dateField: "created_at",
-        order: "asc",
+        order: "desc",
         ...(search ? { search } : {}),
         ...(status ? { status: status as Invoice["status"] } : {}),
         ...(dateRange.from ? { dateFrom: dateRange.from } : {}),

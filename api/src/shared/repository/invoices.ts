@@ -228,6 +228,45 @@ export async function getById(id: string): Promise<InvoiceRow | undefined> {
   );
 }
 
+/**
+ * The GL coding (account + approver) from a vendor's most recently approved
+ * invoice, used to pre-fill the review queues so a reviewer does not retype what
+ * this vendor is always coded to.
+ *
+ * Matched on vendor id OR the vendor NAME. Name matters because the vendor list
+ * is periodically re-uploaded: that removes vendor rows (the FK is ON DELETE SET
+ * NULL) while the invoices keep their `vendor_name_snapshot`. Matching on the
+ * snapshot name lets the coding survive a vendor-list refresh, which matching on
+ * id alone would not.
+ */
+export async function lastApprovedCodingForVendor(
+  invoiceId: string
+): Promise<{ gl_code: string | null; gl_approver: string | null } | undefined> {
+  return queryOne<{ gl_code: string | null; gl_approver: string | null }>(
+    `WITH target AS (
+        SELECT i.vendor_id AS vid,
+               lower(COALESCE(v.name, i.vendor_name_snapshot, '')) AS vname
+          FROM invoices i
+          LEFT JOIN vendors v ON v.id = i.vendor_id
+         WHERE i.id = $1
+     )
+     SELECT a.gl_code, a.gl_approver
+       FROM invoices a
+       LEFT JOIN vendors av ON av.id = a.vendor_id
+       CROSS JOIN target t
+      WHERE a.status = 'approved'
+        AND a.id <> $1
+        AND (a.gl_code IS NOT NULL OR a.gl_approver IS NOT NULL)
+        AND (
+              (t.vid IS NOT NULL AND a.vendor_id = t.vid)
+           OR (t.vname <> '' AND lower(COALESCE(av.name, a.vendor_name_snapshot, '')) = t.vname)
+            )
+      ORDER BY a.approved_at DESC NULLS LAST, a.created_at DESC
+      LIMIT 1`,
+    [invoiceId]
+  );
+}
+
 export async function countByStatus(): Promise<Record<string, number>> {
   const rows = await query<{ status: string; count: string }>(
     `SELECT status, COUNT(*)::text AS count FROM invoices GROUP BY status`

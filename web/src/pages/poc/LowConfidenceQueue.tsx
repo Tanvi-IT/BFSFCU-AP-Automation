@@ -306,6 +306,18 @@ export default function LowConfidenceQueue() {
       setTimeout(() => fetchPdfUrl(), 100);
       setGlAccount(currentInvoice.gl_code || "");
       setGlApprover(currentInvoice.gl_approver || "");
+      // Pre-fill missing GL coding from this vendor's last approved invoice.
+      if (!currentInvoice.gl_code || !currentInvoice.gl_approver) {
+        const invId = currentInvoice.id;
+        invoicesApi
+          .suggestedCoding(invId)
+          .then((s) => {
+            if (prevInvoiceIdRef.current !== invId) return;
+            if (!currentInvoice.gl_code && s.glCode) setGlAccount(s.glCode);
+            if (!currentInvoice.gl_approver && s.glApprover) setGlApprover(s.glApprover);
+          })
+          .catch(() => {});
+      }
     }
   }, [currentInvoice]);
 
@@ -331,8 +343,7 @@ export default function LowConfidenceQueue() {
                 bank_verified: (r as any).vendor_bank_verified ?? false,
               }
             : null,
-        }))
-        .sort((a: any, b: any) => (b.anomaly_score ?? 0) - (a.anomaly_score ?? 0));
+        }));
 
       // Low Confidence is exactly the `validated` status — the backend already
       // routed here. This detail page shows the set as-is for prev/next

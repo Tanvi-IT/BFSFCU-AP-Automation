@@ -242,6 +242,26 @@ app.http('invoices-file', {
 });
 
 // --------------------------------------------------------------------------
+// GET /api/invoices/{id}/suggested-coding
+// The GL coding from this vendor's last approved invoice, to pre-fill review.
+// --------------------------------------------------------------------------
+app.http('invoice-suggested-coding', {
+  methods: ['GET', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'invoices/{id}/suggested-coding',
+  handler: createHandler({ roles: Roles.any }, async ({ req }) => {
+    const id = req.params['id'];
+    if (!id) throw AppError.validation('Missing invoice id');
+
+    const coding = await invoices.lastApprovedCodingForVendor(id);
+    return ok({
+      glCode: coding?.gl_code ?? null,
+      glApprover: coding?.gl_approver ?? null,
+    });
+  }),
+});
+
+// --------------------------------------------------------------------------
 // GET /api/invoices-stats
 // --------------------------------------------------------------------------
 app.http('invoices-stats', {

@@ -157,6 +157,18 @@ export default function HighConfidenceDetail() {
       setTimeout(() => fetchPdfUrl(), 100);
       setGlAccount(currentInvoice.gl_code || "");
       setGlApprover(currentInvoice.gl_approver || "");
+      // Pre-fill missing GL coding from this vendor's last approved invoice.
+      if (!currentInvoice.gl_code || !currentInvoice.gl_approver) {
+        const invId = currentInvoice.id;
+        invoicesApi
+          .suggestedCoding(invId)
+          .then((s) => {
+            if (prevInvoiceIdRef.current !== invId) return;
+            if (!currentInvoice.gl_code && s.glCode) setGlAccount(s.glCode);
+            if (!currentInvoice.gl_approver && s.glApprover) setGlApprover(s.glApprover);
+          })
+          .catch(() => {});
+      }
       setEditVendor(currentInvoice.vendor?.name || "");
       setEditAmount(currentInvoice.total_amount.toString());
       setEditInvoiceNumber(currentInvoice.invoice_number);
