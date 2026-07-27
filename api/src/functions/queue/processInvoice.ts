@@ -146,6 +146,19 @@ app.storageQueue('process-invoice', {
       );
       if (taxFlagged) flags = [...flags, 'tax_line_detected'];
 
+      // 5d. GL coding: inherit this vendor's last coded invoice (approved first,
+      //     then validated/submitted) so a new upload arrives already coded.
+      //     persist.ts only fills blanks, so this never overwrites real coding.
+      const inheritedCoding = await invoices
+        .lastCodingForVendor(vendor.id, vendor.name ?? vendorName ?? null, job.invoiceId)
+        .catch(() => undefined);
+      if (inheritedCoding) {
+        invoiceLog.info('Inheriting GL coding from vendor history', {
+          glCode: inheritedCoding.gl_code,
+          glApprover: inheritedCoding.gl_approver,
+        });
+      }
+
       // 6. Route to a queue based on confidence, flags and vendor standing.
       const routing = routeInvoice({
         confidence: normalized?.confidence ?? 0.5,
@@ -176,6 +189,8 @@ app.storageQueue('process-invoice', {
         // matched vendor's details when the document has none.
         achRoutingNumber: normalized?.achRoutingNumber ?? null,
         achAccountNumber: normalized?.achAccountNumber ?? null,
+        glCode: inheritedCoding?.gl_code ?? null,
+        glApprover: inheritedCoding?.gl_approver ?? null,
         lineItems: extracted.lineItems,
         status: routing.status,
         riskLevel: routing.riskLevel,

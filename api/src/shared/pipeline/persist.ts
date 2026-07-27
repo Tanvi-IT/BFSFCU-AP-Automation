@@ -33,6 +33,12 @@ export interface PersistInput {
   /** ACH details read off the document itself; preferred over the vendor's. */
   achRoutingNumber: string | null;
   achAccountNumber: string | null;
+  /**
+   * GL coding inherited from this vendor's last coded invoice, applied only when
+   * the invoice has none yet. Lets a new upload arrive already coded.
+   */
+  glCode: string | null;
+  glApprover: string | null;
   lineItems: ExtractedLineItem[];
   status: 'validated' | 'submitted' | 'exception';
   riskLevel: 'low' | 'medium' | 'high';
@@ -87,6 +93,11 @@ export async function saveProcessedInvoice(input: PersistInput): Promise<void> {
               -- when neither the document nor a matched vendor has them.
               ach_routing_number = COALESCE($25, (SELECT ach_routing_number FROM vendors WHERE id = $2)),
               ach_account_number = COALESCE($26, (SELECT ach_account_number FROM vendors WHERE id = $2)),
+              -- Inherit GL coding from the vendor's last coded invoice, but only
+              -- fill a blank — never overwrite coding already on this invoice
+              -- (e.g. a reviewer's edit before a reprocess).
+              gl_code     = COALESCE(gl_code, $27),
+              gl_approver = COALESCE(gl_approver, $28),
               -- Never auto-routed to approval out of the pipeline; a human moves
               -- it forward from a queue.
               auto_routed       = false,
@@ -119,6 +130,8 @@ export async function saveProcessedInvoice(input: PersistInput): Promise<void> {
         input.reasoningProvider,
         input.achRoutingNumber,
         input.achAccountNumber,
+        input.glCode,
+        input.glApprover,
       ]
     );
 

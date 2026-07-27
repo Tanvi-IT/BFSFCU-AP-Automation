@@ -228,10 +228,26 @@ export async function getById(id: string): Promise<InvoiceRow | undefined> {
   );
 }
 
+export interface VendorCoding {
+  gl_code: string | null;
+  gl_approver: string | null;
+}
+
+// The set of statuses whose coding is trustworthy enough to propagate, best
+// first. An APPROVED invoice's coding is the source of truth; a validated or
+// submitted one is a good fallback (e.g. right after "apply to all" but before
+// anyone has approved). Declined/exception coding is never propagated. The
+// ORDER BY prefers approved, then the most recent.
+const CODING_SOURCE_ORDER = `
+  ORDER BY (a.status = 'approved') DESC,
+           a.approved_at DESC NULLS LAST,
+           a.updated_at DESC,
+           a.created_at DESC
+  LIMIT 1`;
+
 /**
- * The GL coding (account + approver) from a vendor's most recently approved
- * invoice, used to pre-fill the review queues so a reviewer does not retype what
- * this vendor is always coded to.
+ * The GL coding (account + approver) to inherit for a vendor, from that vendor's
+ * most recent coded invoice — approved first, then validated/submitted.
  *
  * Matched on vendor id OR the vendor NAME. Name matters because the vendor list
  * is periodically re-uploaded: that removes vendor rows (the FK is ON DELETE SET
@@ -239,10 +255,33 @@ export async function getById(id: string): Promise<InvoiceRow | undefined> {
  * snapshot name lets the coding survive a vendor-list refresh, which matching on
  * id alone would not.
  */
-export async function lastApprovedCodingForVendor(
+export async function lastCodingForVendor(
+  vendorId: string | null,
+  vendorName: string | null,
+  excludeInvoiceId: string
+): Promise<VendorCoding | undefined> {
+  return queryOne<VendorCoding>(
+    `SELECT a.gl_code, a.gl_approver
+       FROM invoices a
+       LEFT JOIN vendors av ON av.id = a.vendor_id
+      WHERE a.status IN ('approved', 'validated', 'submitted')
+        AND (a.gl_code IS NOT NULL OR a.gl_approver IS NOT NULL)
+        AND a.id <> $3
+        AND (
+              ($1::uuid IS NOT NULL AND a.vendor_id = $1::uuid)
+           OR ($2 <> '' AND lower(COALESCE(av.name, a.vendor_name_snapshot, '')) = $2)
+            )
+     ${CODING_SOURCE_ORDER}`,
+    [vendorId, (vendorName ?? '').toLowerCase(), excludeInvoiceId]
+  );
+}
+
+/** Same lookup, but resolving the vendor from an existing invoice — used by the
+ *  review pages to pre-fill an invoice that has no coding yet. */
+export async function codingSuggestionForInvoice(
   invoiceId: string
-): Promise<{ gl_code: string | null; gl_approver: string | null } | undefined> {
-  return queryOne<{ gl_code: string | null; gl_approver: string | null }>(
+): Promise<VendorCoding | undefined> {
+  return queryOne<VendorCoding>(
     `WITH target AS (
         SELECT i.vendor_id AS vid,
                lower(COALESCE(v.name, i.vendor_name_snapshot, '')) AS vname
@@ -254,15 +293,14 @@ export async function lastApprovedCodingForVendor(
        FROM invoices a
        LEFT JOIN vendors av ON av.id = a.vendor_id
        CROSS JOIN target t
-      WHERE a.status = 'approved'
+      WHERE a.status IN ('approved', 'validated', 'submitted')
         AND a.id <> $1
         AND (a.gl_code IS NOT NULL OR a.gl_approver IS NOT NULL)
         AND (
               (t.vid IS NOT NULL AND a.vendor_id = t.vid)
            OR (t.vname <> '' AND lower(COALESCE(av.name, a.vendor_name_snapshot, '')) = t.vname)
             )
-      ORDER BY a.approved_at DESC NULLS LAST, a.created_at DESC
-      LIMIT 1`,
+     ${CODING_SOURCE_ORDER}`,
     [invoiceId]
   );
 }

@@ -253,7 +253,7 @@ app.http('invoice-suggested-coding', {
     const id = req.params['id'];
     if (!id) throw AppError.validation('Missing invoice id');
 
-    const coding = await invoices.lastApprovedCodingForVendor(id);
+    const coding = await invoices.codingSuggestionForInvoice(id);
     return ok({
       glCode: coding?.gl_code ?? null,
       glApprover: coding?.gl_approver ?? null,
