@@ -15,6 +15,7 @@
  */
 
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
+import { timingSafeEqual } from 'node:crypto';
 import type { HttpRequest } from '@azure/functions';
 import { config } from './config';
 import { AppError } from './errors';
@@ -30,6 +31,9 @@ export function isAppRole(value: string): value is AppRole {
 
 /** Name of the session cookie. */
 export const SESSION_COOKIE = 'session';
+
+/** Header carrying a machine-to-machine ingestion key (see config.ingest). */
+export const API_KEY_HEADER = 'x-api-key';
 
 /** The verified caller. `sub` is the application user id (users.id). */
 export interface Principal {
@@ -88,10 +92,46 @@ function readToken(req: HttpRequest): string | undefined {
 }
 
 /**
- * Verify the request's session token.
+ * Constant-time comparison of two strings. Returns false on any length
+ * mismatch without leaking timing about how much matched.
+ */
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
+/**
+ * Machine-to-machine authentication via a static ingestion key.
+ *
+ * Returns the service-account principal when a valid `X-Api-Key` is present,
+ * or `undefined` when the header is absent (so the session path runs instead).
+ * A present-but-wrong key — or a key sent while ingestion is not configured on
+ * the server — is a hard failure, never a silent fall-through.
+ */
+function authenticateApiKey(req: HttpRequest): Principal | undefined {
+  const provided = req.headers.get(API_KEY_HEADER);
+  if (!provided) return undefined;
+
+  const { apiKey, userId } = config.ingest;
+  if (!apiKey || !userId) {
+    throw AppError.unauthorized('API key authentication is not enabled');
+  }
+  if (!safeEqual(provided, apiKey)) {
+    throw AppError.unauthorized('Invalid API key');
+  }
+  return { sub: userId };
+}
+
+/**
+ * Verify the request's identity — a machine ingestion key if present, otherwise
+ * the session token.
  * Throws AppError.unauthorized on any failure — never returns a partial result.
  */
 export async function authenticate(req: HttpRequest): Promise<Principal> {
+  const apiKeyPrincipal = authenticateApiKey(req);
+  if (apiKeyPrincipal) return apiKeyPrincipal;
+
   const token = readToken(req);
   if (!token) {
     throw AppError.unauthorized('Not signed in');

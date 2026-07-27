@@ -244,8 +244,8 @@ export default function AuditConsole() {
 
         <Card>
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2 relative">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <div className="relative flex-1 md:min-w-[16rem]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   className="pl-9"
@@ -255,7 +255,7 @@ export default function AuditConsole() {
                 />
               </div>
               <Select value={status || "all"} onValueChange={(v) => setStatus(v === "all" ? "" : v)}>
-                <SelectTrigger>
+                <SelectTrigger className="md:w-44">
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
                 <SelectContent>
@@ -265,8 +265,6 @@ export default function AuditConsole() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="mt-4">
               <DateRangePresetFilter value={datePreset} onChange={setDatePreset} label="Uploaded" />
             </div>
           </CardContent>

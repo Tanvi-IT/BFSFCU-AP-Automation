@@ -144,6 +144,14 @@ export const activityApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Demo utilities — only wired up in demo builds (VITE_DEMO_MODE / DEMO_MODE).
+// ---------------------------------------------------------------------------
+export const demoApi = {
+  /** Wipe transactional data (invoices, vendors, and their dependents). */
+  reset: () => api.post<{ ok: boolean }>("/demo/reset", {}),
+};
+
+// ---------------------------------------------------------------------------
 // Departments (GL coding lookup)
 // ---------------------------------------------------------------------------
 export interface Department {

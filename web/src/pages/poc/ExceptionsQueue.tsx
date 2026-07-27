@@ -10,7 +10,7 @@ import { invoicesApi, QUEUE } from "@/services/invoices";
 import { useAuth } from "@/hooks/useAuth";
 import { getReasonLabels } from "@/lib/invoiceReasons";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertOctagon, Eye, CheckCircle2, RotateCcw, Building2, Search } from "lucide-react";
+import { Loader2, AlertOctagon, Eye, CheckCircle2, RotateCcw, Search } from "lucide-react";
 import { format } from "date-fns";
 import {
   Dialog,
@@ -269,11 +269,7 @@ export default function ExceptionsQueue() {
                   {filteredInvoices.map((invoice) => (
                     <TableRow key={invoice.id} className="cursor-pointer" onClick={() => navigate(`/poc/exceptions/${invoice.id}`)}>
                       <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          {invoice.vendor?.name || "Unknown"}
-
-                        </div>
+                        {invoice.vendor?.name || "Unknown"}
                       </TableCell>
                       <TableCell>{invoice.invoice_number}</TableCell>
                       <TableCell>

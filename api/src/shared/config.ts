@@ -152,6 +152,37 @@ export const config = {
     },
   },
 
+  /**
+   * Machine-to-machine ingestion (e.g. a Power Automate flow that forwards
+   * emailed invoices). A caller presenting `X-Api-Key: <apiKey>` is
+   * authenticated as the service user `userId` — no login round-trip. Both must
+   * be set for the key path to work; leaving `apiKey` empty disables it.
+   *
+   * Keep the key in Key Vault (or local.settings.json locally), never in the
+   * database or the repo. Rotate by changing this value; it is independent of
+   * SESSION_SECRET, so rotating it does not sign anyone out.
+   */
+  ingest: {
+    get apiKey() {
+      return process.env['INGEST_API_KEY'] ?? '';
+    },
+    /** users.id of the service account that API-key requests act as. */
+    get userId() {
+      return process.env['INGEST_USER_ID'] ?? '';
+    },
+  },
+
+  /**
+   * Demo mode. When enabled, the demo-reset endpoint is available so a
+   * presenter can wipe transactional data between demos. MUST be left unset
+   * (false) in production — the reset endpoint 404s when this is off.
+   */
+  demo: {
+    get enabled() {
+      return bool('DEMO_MODE', false);
+    },
+  },
+
   logLevel: optional('LOG_LEVEL', 'info'),
   isLocal: process.env['AZURE_FUNCTIONS_ENVIRONMENT'] === 'Development',
 } as const;

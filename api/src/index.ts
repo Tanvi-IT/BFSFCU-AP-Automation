@@ -16,6 +16,7 @@ import './functions/http/users';
 import './functions/http/departments';
 import './functions/http/exports';
 import './functions/http/erp';
+import './functions/http/demo';
 
 // --- Queue workers ---------------------------------------------------------
 import './functions/queue/processInvoice';

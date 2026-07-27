@@ -28,6 +28,7 @@ import {
   AlertOctagon,
   Pencil,
   X,
+  Landmark,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -734,6 +735,42 @@ export default function HighConfidenceDetail() {
                     </div>
                   </div>
                 </div>
+                {/* ACH routing/account — editable when in Edit mode, matching
+                    the Low Confidence detail. Kept here in the main details grid
+                    (above the Assignment panel and Save button) so a reviewer
+                    edits them as part of the invoice fields, not below Save. */}
+                <div className="flex items-start gap-2">
+                  <Landmark className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex-1">
+                    <p className="text-xs text-muted-foreground">ACH Routing #</p>
+                    {isFieldEditing ? (
+                      <Input
+                        value={editAchRouting}
+                        onChange={(e) => setEditAchRouting(e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="9-digit routing number"
+                      />
+                    ) : (
+                      <p className="font-medium text-sm font-mono">{currentInvoice?.ach_routing_number || '—'}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Landmark className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex-1">
+                    <p className="text-xs text-muted-foreground">ACH Account #</p>
+                    {isFieldEditing ? (
+                      <Input
+                        value={editAchAccount}
+                        onChange={(e) => setEditAchAccount(e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="Account number"
+                      />
+                    ) : (
+                      <p className="font-medium text-sm font-mono">{currentInvoice?.ach_account_number || '—'}</p>
+                    )}
+                  </div>
+                </div>
               </div>
             <Separator />
  {/* GL and Department Editing - Free Text */}
@@ -840,54 +877,6 @@ export default function HighConfidenceDetail() {
                   </span>
                 </div>
               )}
-              {/* ACH routing/account — editable when in Edit mode, matching the
-                  Low Confidence detail. The rows always render so a reviewer can
-                  fill in a value that did not carry over from the vendor. */}
-              <div className="field-row" style={{ marginTop: '8px' }}>
-                <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
-                  ACH Routing #
-                </span>
-                {isFieldEditing ? (
-                  <input
-                    className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                    type="text"
-                    value={editAchRouting}
-                    onChange={(e) => setEditAchRouting(e.target.value)}
-                    placeholder="9-digit routing number"
-                  />
-                ) : (
-                  <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#374151' }}>
-                    {currentInvoice?.ach_routing_number || '—'}
-                  </span>
-                )}
-              </div>
-              <div className="field-row" style={{ marginTop: '8px' }}>
-                <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
-                  ACH Account #
-                </span>
-                {isFieldEditing ? (
-                  <input
-                    className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                    type="text"
-                    value={editAchAccount}
-                    onChange={(e) => setEditAchAccount(e.target.value)}
-                    placeholder="Account number"
-                  />
-                ) : (
-                  <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#374151' }}>
-                    {currentInvoice?.ach_account_number || '—'}
-                  </span>
-                )}
-              </div>
-
-            
-
-             
-
-           
-
-             
-
               {/* Processing Details removed from client view - retained in admin diagnostics */}
 
               {/* Actions */}

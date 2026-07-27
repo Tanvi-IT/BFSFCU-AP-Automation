@@ -13,7 +13,7 @@ import {
   type DatePreset,
 } from "@/components/DateRangePresetFilter";
 import { invoicesApi, QUEUE } from "@/services/invoices";
-import { Loader2, XCircle, Eye, Building2, Search } from "lucide-react";
+import { Loader2, XCircle, Eye, Search } from "lucide-react";
 import { format } from "date-fns";
 
 interface DeclinedInvoice {
@@ -169,10 +169,7 @@ export default function DeclinedQueue() {
                   {invoices.map((invoice) => (
                     <TableRow key={invoice.id}>
                       <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          {invoice.vendor?.name || "Unknown"}
-                        </div>
+                        {invoice.vendor?.name || "Unknown"}
                       </TableCell>
                       <TableCell>{invoice.invoice_number}</TableCell>
                       <TableCell>
