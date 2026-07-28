@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, CSSProperties } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import peapodLogo from "@/assets/tenant-logos/peapod-logo.png";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,9 @@ export const Layout = ({ children }: LayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const showBackButton = location.pathname !== "/dashboard" && 
+  const showBackButton = location.pathname !== "/dashboard" &&
     location.pathname !== "/" &&
-    !location.pathname.match(/^\/poc\/(low-confidence|high-confidence|exceptions)\/[^/]+$/);
+    !location.pathname.match(/^\/(low-confidence|high-confidence|exceptions)\/[^/]+$/);
 
   const handleSignOut = async () => {
     try {
@@ -52,52 +52,57 @@ export const Layout = ({ children }: LayoutProps) => {
   };
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full max-w-full overflow-hidden bg-background">
-        <AppSidebar />
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <header className="border-b border-[#0C2D4D] h-16 shrink-0 max-w-full overflow-hidden" style={{ backgroundColor: "#0C2D4D" }}>
-            <div className="flex h-full min-w-0 items-center justify-between gap-4 px-4">
-              <div className="flex min-w-0 items-center gap-4">
-                <SidebarTrigger className="h-8 w-8 text-white hover:text-white/80">
-                  <Menu className="h-4 w-4" />
-                </SidebarTrigger>
-                {showBackButton && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => navigate(-1)}
-                    className="flex items-center gap-2 text-white hover:text-white/80 hover:bg-white/10"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back
-                  </Button>
-                )}
-                <img
-                  src={peapodLogo}
-                  alt="PeaPod"
-                  className="h-10 w-auto cursor-pointer"
-                  onClick={() => navigate("/dashboard")}
-                />
-              </div>
-              <div className="flex min-w-0 shrink-0 items-center gap-4">
-                {getRoleBadge()}
-                <span className="hidden max-w-48 truncate text-sm text-white/80 lg:inline">{user?.email}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleSignOut}
-                  className="flex items-center gap-2 bg-transparent border border-white text-white hover:bg-white/[0.12] hover:text-white"
-                >
-                  <LogOut className="h-4 w-4" />
-                  <span className="hidden sm:inline">Sign Out</span>
-                </Button>
-              </div>
-            </div>
-          </header>
-          <main className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden p-6">{children}</main>
+    <SidebarProvider style={{ "--header-height": "4rem" } as CSSProperties}>
+      {/* Full-width top banner. Fixed, so it sits above BOTH the sidebar and the
+          content — the sidebar is offset below it via --header-height. */}
+      <header
+        className="fixed top-0 inset-x-0 z-30 h-16 border-b border-[#0C2D4D]"
+        style={{ backgroundColor: "#0C2D4D" }}
+      >
+        <div className="flex h-full min-w-0 items-center justify-between gap-4 px-4">
+          <div className="flex min-w-0 items-center gap-4">
+            <SidebarTrigger className="h-8 w-8 text-white hover:text-white/80">
+              <Menu className="h-4 w-4" />
+            </SidebarTrigger>
+            {showBackButton && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(-1)}
+                className="flex items-center gap-2 text-white hover:text-white/80 hover:bg-white/10"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+            )}
+            <img
+              src={peapodLogo}
+              alt="PeaPod"
+              className="h-10 w-auto cursor-pointer"
+              onClick={() => navigate("/dashboard")}
+            />
+          </div>
+          <div className="flex min-w-0 shrink-0 items-center gap-4">
+            {getRoleBadge()}
+            <span className="hidden max-w-48 truncate text-sm text-white/80 lg:inline">{user?.email}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSignOut}
+              className="flex items-center gap-2 bg-transparent border border-white text-white hover:bg-white/[0.12] hover:text-white"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </Button>
+          </div>
         </div>
-      </div>
+      </header>
+
+      <AppSidebar />
+
+      <main className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden px-6 pb-6 pt-[calc(4rem+1.5rem)]">
+        {children}
+      </main>
     </SidebarProvider>
   );
 };

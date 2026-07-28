@@ -398,9 +398,11 @@ const InvoiceList = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">Invoices</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              {isApprovedView ? "Approved" : "Invoices"}
+            </h1>
             <p className="text-muted-foreground mt-1">
-              Manage and review all invoices
+              {isApprovedView ? "Approved invoices" : "Manage and review all invoices"}
             </p>
           </div>
           <div className="flex items-center gap-2">
