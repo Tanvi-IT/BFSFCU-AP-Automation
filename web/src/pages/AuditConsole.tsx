@@ -42,7 +42,9 @@ import {
 // (submitted), one escalated (exception), or one already settled (approved /
 // declined). Intake states (queued/processing/validated) are omitted.
 const STATUSES: { value: string; label: string }[] = [
-  { value: "submitted", label: "In Queue" },
+  // "In Queue" collapses every review state, so the filter must match them all —
+  // not just `submitted`, which showed a fraction of the queue.
+  { value: "queued,processing,validated,submitted", label: "In Queue" },
   { value: "exception", label: "Exception" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Declined" },

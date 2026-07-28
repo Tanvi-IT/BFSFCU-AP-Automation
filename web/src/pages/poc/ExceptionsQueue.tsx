@@ -80,9 +80,10 @@ export default function ExceptionsQueue() {
             total_amount: Number(inv.total_amount),
             currency: inv.currency,
             created_at: inv.created_at,
-            // Renamed: checker_comment → decline_reason
+            // The reviewer note lives in checker_comment (decline_reason is a
+            // legacy, unused column).
             checker_comment:
-              (inv as { decline_reason?: string | null }).decline_reason ?? null,
+              (inv as { checker_comment?: string | null }).checker_comment ?? null,
             duplicate_type: inv.duplicate_type,
             variation_flags: flags,
             // These were separate columns before; they are variation flags now,

@@ -38,6 +38,10 @@ export default function HighConfidenceQueue() {
   const { toast } = useToast();
   const [invoices, setInvoices] = useState<InvoiceWithVendor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // See LowConfidenceList: gate the empty state on a successful load so a
+  // transient fetch failure keeps the spinner (the 10s poll recovers) rather
+  // than flashing "no invoices" while data actually exists.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isApproving, setIsApproving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -112,6 +116,7 @@ export default function HighConfidenceQueue() {
         tax_flag_reason: inv.tax_flag_reason ?? null,
         vendor: inv.vendors,
       })));
+      setHasLoaded(true);
     } catch (error) {
       console.error("Error fetching invoices:", error);
     } finally {
@@ -250,7 +255,7 @@ export default function HighConfidenceQueue() {
             <CardTitle>Ready for Approval ({filteredInvoices.length})</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            {isLoading ? (
+            {!hasLoaded ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>

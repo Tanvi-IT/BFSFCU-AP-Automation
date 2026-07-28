@@ -155,8 +155,20 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
   const params: unknown[] = [];
 
   if (filters.status) {
-    params.push(filters.status);
-    where.push(`i.status = $${params.length}`);
+    // Accept a single status or a comma-separated set (e.g. the audit "In Queue"
+    // filter, which spans queued/processing/validated/submitted). Compared as
+    // text so a set can be matched with = ANY without per-enum casts.
+    const statuses = String(filters.status)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (statuses.length > 1) {
+      params.push(statuses);
+      where.push(`i.status::text = ANY($${params.length})`);
+    } else {
+      params.push(statuses[0]);
+      where.push(`i.status = $${params.length}`);
+    }
   }
 
   if (filters.search) {
@@ -164,9 +176,10 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
     const p = `$${params.length}`;
     // Search invoice number, vendor name (both the live vendor and the name
     // captured on the invoice, so unmatched-vendor invoices are still findable),
-    // and the decline reason (how declined history is usually recalled).
+    // the amount, and the decline reason (`checker_comment` is the column the app
+    // actually writes — `decline_reason` is a legacy, unused column).
     where.push(
-      `(i.invoice_number ILIKE ${p} OR v.name ILIKE ${p} OR i.vendor_name_snapshot ILIKE ${p} OR i.decline_reason ILIKE ${p})`
+      `(i.invoice_number ILIKE ${p} OR v.name ILIKE ${p} OR i.vendor_name_snapshot ILIKE ${p} OR i.checker_comment ILIKE ${p} OR i.total_amount::text ILIKE ${p})`
     );
   }
 

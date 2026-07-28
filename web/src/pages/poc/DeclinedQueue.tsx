@@ -89,8 +89,9 @@ export default function DeclinedQueue() {
         currency: inv.currency,
         created_at: inv.created_at,
         updated_at: inv.updated_at,
-        // Renamed: checker_comment → decline_reason
-        checker_comment: (inv as { decline_reason?: string | null }).decline_reason ?? null,
+        // The decline reason is written to checker_comment (decline_reason is a
+        // legacy, unused column — reading it showed "No reason provided").
+        checker_comment: (inv as { checker_comment?: string | null }).checker_comment ?? null,
         // Name, not vendor_id: a vendor removed by a later list upload must not
         // blank out the payee on invoices already decided.
         vendor: inv.vendor_name ? { id: inv.vendor_id ?? "", name: inv.vendor_name } : null,

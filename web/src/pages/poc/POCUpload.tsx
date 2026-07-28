@@ -17,7 +17,6 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
-  ArrowLeft,
   File,
   Trash2,
   ChevronDown,
@@ -93,6 +92,27 @@ async function runWithConcurrency<T>(
     }
   });
   await Promise.all(runners);
+}
+
+/**
+ * Where a "View" click should land, by invoice status. Each status goes to its
+ * own queue page; approved goes to the Approved list (the sidebar view), never
+ * the bare /invoices all-status page.
+ */
+function invoiceRoute(status: string | undefined, id: string | undefined): string {
+  switch (status) {
+    case "exception":
+      return `/poc/exceptions/${id}`;
+    case "submitted":
+      return `/poc/high-confidence/${id}`;
+    case "approved":
+      return "/invoices?status=approved";
+    case "rejected":
+    case "declined":
+      return "/poc/declined";
+    default: // validated / queued / processing
+      return `/poc/low-confidence/${id}`;
+  }
 }
 
 export default function POCUpload() {
@@ -442,25 +462,14 @@ export default function POCUpload() {
     <Layout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("/poc/dashboard")}
-              className="mb-2"
-            >
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back to Dashboard
-            </Button>
-            <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-foreground">
-              <Upload className="h-8 w-8" />
-              Upload Invoices
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Upload PDF or image files for processing
-            </p>
-          </div>
+        <div>
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-foreground">
+            <Upload className="h-8 w-8" />
+            Upload Invoices
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Upload PDF or image files for processing
+          </p>
         </div>
 
         {/* Upload Zone */}
@@ -622,11 +631,7 @@ export default function POCUpload() {
                         variant="ghost"
                         size="sm"
                         onClick={() =>
-                          navigate(
-                            uploadFile.finalStatus === "exception"
-                              ? `/poc/exceptions/${uploadFile.invoiceId}`
-                              : `/poc/low-confidence/${uploadFile.invoiceId}`
-                          )
+                          navigate(invoiceRoute(uploadFile.finalStatus, uploadFile.invoiceId))
                         }
                       >
                         View
@@ -677,11 +682,7 @@ export default function POCUpload() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => navigate(
-                          inv.status === "exception" ? `/poc/exceptions/${inv.id}` :
-                          inv.status === "approved" ? `/invoices` :
-                          `/poc/low-confidence/${inv.id}`
-                        )}
+                        onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
                       >
                         View
                       </Button>

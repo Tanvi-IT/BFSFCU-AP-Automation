@@ -468,7 +468,7 @@ const InvoiceDetail = () => {
                     <RiskBadge level={invoice.riskLevel} className="mt-1" />
                   </div>
                 )}
-                {invoice.status?.toLowerCase() === 'rejected' && invoice.checkerComment && (
+                {["rejected", "declined"].includes(invoice.status?.toLowerCase() ?? "") && invoice.checkerComment && (
                   <div className="min-w-0 sm:col-span-2">
                     <p className="text-sm font-medium text-muted-foreground">Decline Reason</p>
                     <p className="text-foreground mt-1">{invoice.checkerComment}</p>
@@ -519,23 +519,15 @@ const InvoiceDetail = () => {
                   </div>
                 )}
                 {invoice.achRoutingNumber && (
-                  <div className="field-row min-w-0" style={{ marginTop: '8px' }}>
-                    <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
-                      ACH Routing #
-                    </span>
-                    <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#374151' }}>
-                      {invoice.achRoutingNumber}
-                    </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground">ACH Routing #</p>
+                    <p className="text-foreground">{invoice.achRoutingNumber}</p>
                   </div>
                 )}
                 {invoice.achAccountNumber && (
-                  <div className="field-row min-w-0" style={{ marginTop: '8px' }}>
-                    <span style={{ fontSize: '12px', color: '#6B7280', display: 'block', marginBottom: '2px' }}>
-                      ACH Account #
-                    </span>
-                    <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#374151' }}>
-                      {invoice.achAccountNumber}
-                    </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground">ACH Account #</p>
+                    <p className="text-foreground">{invoice.achAccountNumber}</p>
                   </div>
                 )}
                 <div className="min-w-0">

@@ -86,6 +86,9 @@ export default function HighConfidenceDetail() {
   const [invoices, setInvoices] = useState<InvoiceDetail[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  // Gate the "no invoices" screen on a successful load so a transient fetch
+  // failure keeps the spinner (the 10s poll recovers) instead of claiming empty.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   
@@ -232,6 +235,7 @@ export default function HighConfidenceDetail() {
         ach_account_number: inv.ach_account_number ?? null,
         vendor: inv.vendors,
       })));
+      setHasLoaded(true);
     } catch (error) {
       console.error("Error fetching invoices:", error);
     } finally {
@@ -413,7 +417,7 @@ export default function HighConfidenceDetail() {
     }
   };
 
-  if (isLoading) {
+  if (!hasLoaded) {
     return (
       <Layout>
         <div className="flex justify-center py-20">
@@ -521,7 +525,7 @@ export default function HighConfidenceDetail() {
                       title="Invoice PDF"
                     />
                   </object>
-                  <div className="text-center">
+                  <div className="text-left">
                     <Button
                       variant="outline"
                       size="sm"

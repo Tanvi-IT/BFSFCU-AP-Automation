@@ -83,7 +83,9 @@ const InvoiceList = () => {
   const { canApprove, tenantId, user } = useAuth();
   
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialStatus = searchParams.get("status") || "all";
+  // This page exists only as the Approved view (sidebar → Approved). Landing on
+  // it with no status must not expose an all-status list, so default to approved.
+  const initialStatus = searchParams.get("status") || "approved";
   
   const [invoices, setInvoices] = useState<InvoiceWithVariation[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<InvoiceWithVariation[]>([]);
@@ -139,9 +141,15 @@ const InvoiceList = () => {
   }, [page]);
 
   useEffect(() => {
-    const s = searchParams.get("status") || "all";
-    setStatusFilter(s);
-  }, [searchParams]);
+    // No status in the URL → force the Approved view (and reflect it in the URL)
+    // so /invoices is never the bare all-status page.
+    if (!searchParams.get("status")) {
+      setSearchParams({ status: "approved" }, { replace: true });
+      setStatusFilter("approved");
+      return;
+    }
+    setStatusFilter(searchParams.get("status") as string);
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     applyFilters();

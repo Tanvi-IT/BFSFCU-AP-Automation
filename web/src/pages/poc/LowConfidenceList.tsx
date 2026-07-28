@@ -41,6 +41,10 @@ export default function LowConfidenceList() {
   const { toast } = useToast();
   const [invoices, setInvoices] = useState<InvoiceWithVendor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // True only after a fetch has SUCCEEDED at least once. The empty state is
+  // gated on this so a transient/failed fetch (e.g. under load) keeps the
+  // spinner and lets the 10s poll recover, instead of flashing "no invoices".
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
   // Inline GL editing
@@ -115,6 +119,7 @@ export default function LowConfidenceList() {
         bad_file_reason: inv.bad_file_reason ?? null,
         vendor: inv.vendors,
       })));
+      setHasLoaded(true);
     } catch (error) {
       console.error("Error fetching invoices:", error);
     } finally {
@@ -187,7 +192,7 @@ export default function LowConfidenceList() {
             <CardTitle>Requires Review ({filteredInvoices.length})</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            {isLoading ? (
+            {!hasLoaded ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>

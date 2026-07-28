@@ -115,6 +115,9 @@ export default function LowConfidenceQueue() {
   const [previousInvoice, setPreviousInvoice] = useState<PreviousInvoice | null>(null);
   const [duplicateOriginal, setDuplicateOriginal] = useState<DuplicateOriginal | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Gate the "no invoices" screen on a successful load so a transient fetch
+  // failure keeps the spinner (the 10s poll recovers) instead of claiming empty.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [exceptionsDialogOpen, setExceptionsDialogOpen] = useState(false);
@@ -386,6 +389,7 @@ export default function LowConfidenceQueue() {
         vendor: inv.vendors,
       }));
       setInvoices(mapped);
+      setHasLoaded(true);
       // Cache the result for this tenant
       try {
         const cacheKey = `lc_invoices_${tenantId}`;
@@ -662,7 +666,7 @@ export default function LowConfidenceQueue() {
     return getReasonLabels(currentInvoice);
   };
 
-  if (isLoading) {
+  if (!hasLoaded) {
     return (
       <Layout>
         <div className="flex justify-center py-20">
@@ -765,7 +769,7 @@ export default function LowConfidenceQueue() {
                       title="Invoice PDF"
                     />
                   </object>
-                  <div className="text-center">
+                  <div className="text-left">
                     <Button
                       variant="outline"
                       size="sm"
