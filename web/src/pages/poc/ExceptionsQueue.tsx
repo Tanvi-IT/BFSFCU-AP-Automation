@@ -10,7 +10,7 @@ import { invoicesApi, QUEUE } from "@/services/invoices";
 import { useAuth } from "@/hooks/useAuth";
 import { getReasonLabels } from "@/lib/invoiceReasons";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertOctagon, Eye, CheckCircle2, RotateCcw, Search } from "lucide-react";
+import { Loader2, AlertOctagon, CheckCircle2, RotateCcw, Search } from "lucide-react";
 import { format } from "date-fns";
 import {
   Dialog,
@@ -263,12 +263,11 @@ export default function ExceptionsQueue() {
                     <TableHead>Amount</TableHead>
                     <TableHead>Escalated</TableHead>
                     <TableHead>Reason</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredInvoices.map((invoice) => (
-                    <TableRow key={invoice.id} className="cursor-pointer" onClick={() => navigate(`/poc/exceptions/${invoice.id}`)}>
+                    <TableRow key={invoice.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/exceptions/${invoice.id}`)}>
                       <TableCell className="font-medium">
                         {invoice.vendor?.name || "Unknown"}
                       </TableCell>
@@ -291,18 +290,6 @@ export default function ExceptionsQueue() {
                               {r}
                             </Badge>
                           ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => navigate(`/poc/exceptions/${invoice.id}`)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-
                         </div>
                       </TableCell>
                     </TableRow>

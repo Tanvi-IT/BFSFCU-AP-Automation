@@ -84,7 +84,7 @@ export function DuplicateWarningCard({
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Original invoice:</span>
             <Link 
-              to={duplicateOfStatus === "exception" ? `/poc/exceptions/${duplicateOfId}` : duplicateOfStatus === "validated" ? `/poc/low-confidence/${duplicateOfId}` : `/poc/exceptions/${duplicateOfId}`}
+              to={duplicateOfStatus === "exception" ? `/exceptions/${duplicateOfId}` : duplicateOfStatus === "validated" ? `/low-confidence/${duplicateOfId}` : `/exceptions/${duplicateOfId}`}
               className="text-sm text-primary hover:underline flex items-center gap-1"
             >
               {duplicateOfNumber || duplicateOfId.slice(0, 8)}

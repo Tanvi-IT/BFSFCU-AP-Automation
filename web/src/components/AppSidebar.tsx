@@ -54,19 +54,19 @@ const dashboardItem = { title: "Dashboard", url: "/dashboard", icon: LayoutDashb
 
 /** Processing queues — the daily work, visible to everyone. */
 const queueNavItems = [
-  { title: "High-Confidence Queue", url: "/poc/high-confidence", icon: CheckCircle2 },
-  { title: "Low-Confidence Queue", url: "/poc/low-confidence", icon: AlertTriangle },
-  { title: "Exceptions", url: "/poc/exceptions", icon: AlertOctagon },
-  { title: "Declined", url: "/poc/declined", icon: XCircle },
+  { title: "High-Confidence Queue", url: "/high-confidence", icon: CheckCircle2 },
+  { title: "Low-Confidence Queue", url: "/low-confidence", icon: AlertTriangle },
+  { title: "Exceptions", url: "/exceptions", icon: AlertOctagon },
+  { title: "Declined", url: "/declined", icon: XCircle },
   // Approved is a filtered view of the invoice list, not its own page.
   { title: "Approved", url: "/invoices?status=approved", icon: CheckCheck },
 ];
 
 /** Administration — everyone sees the first three; the rest are admin-only. */
 const adminNavItems: { title: string; url: string; icon: typeof Upload; adminOnly?: boolean }[] = [
-  { title: "Upload Invoices", url: "/poc/upload", icon: Upload },
+  { title: "Upload Invoices", url: "/upload", icon: Upload },
   { title: "Vendors", url: "/vendors", icon: Users },
-  { title: "User Management", url: "/poc/user-management", icon: UserCog, adminOnly: true },
+  { title: "User Management", url: "/user-management", icon: UserCog, adminOnly: true },
   { title: "Audit", url: "/settings/audit", icon: ShieldCheck, adminOnly: true },
 ];
 

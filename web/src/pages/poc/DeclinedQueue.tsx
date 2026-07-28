@@ -13,7 +13,7 @@ import {
   type DatePreset,
 } from "@/components/DateRangePresetFilter";
 import { invoicesApi, QUEUE } from "@/services/invoices";
-import { Loader2, XCircle, Eye, Search } from "lucide-react";
+import { Loader2, XCircle, Search } from "lucide-react";
 import { format } from "date-fns";
 
 interface DeclinedInvoice {
@@ -163,12 +163,15 @@ export default function DeclinedQueue() {
                     <TableHead>Amount</TableHead>
                     <TableHead>Declined Date</TableHead>
                     <TableHead>Reason</TableHead>
-                    <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {invoices.map((invoice) => (
-                    <TableRow key={invoice.id}>
+                    <TableRow
+                      key={invoice.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigate(`/invoices/${invoice.id}?from=declined`)}
+                    >
                       <TableCell className="font-medium">
                         {invoice.vendor?.name || "Unknown"}
                       </TableCell>
@@ -183,15 +186,6 @@ export default function DeclinedQueue() {
                         <Badge variant="outline" className="text-xs max-w-[200px] truncate">
                           {invoice.checker_comment || "No reason provided"}
                         </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => navigate(`/invoices/${invoice.id}?from=declined`)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

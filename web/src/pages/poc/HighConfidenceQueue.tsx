@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { invoicesApi, QUEUE } from "@/services/invoices";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, Eye, Search } from "lucide-react";
+import { Loader2, CheckCircle2, Search } from "lucide-react";
 import { format } from "date-fns";
 import { HIGH_CONFIDENCE_THRESHOLD } from "@/lib/pocConfig";
 import { displayInvoiceNumber } from "@/lib/utils";
@@ -281,12 +281,11 @@ export default function HighConfidenceQueue() {
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Received</TableHead>
                     <TableHead>GL (Approver)</TableHead>
-                    <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredInvoices.map((invoice) => (
-                    <TableRow key={invoice.id} className="cursor-pointer" onClick={() => navigate(`/poc/high-confidence/${invoice.id}`)}>
+                    <TableRow key={invoice.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/high-confidence/${invoice.id}`)}>
                       {canApprove && (
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <Checkbox
@@ -333,15 +332,6 @@ export default function HighConfidenceQueue() {
                             {invoice.gl_code || "—"}
                           </button>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => navigate(`/poc/high-confidence/${invoice.id}`)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

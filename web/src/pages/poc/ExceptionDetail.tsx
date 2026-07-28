@@ -158,7 +158,7 @@ export default function ExceptionDetail() {
       );
       // Audit is written server-side in the same transaction.
       toast({ title: "Approved as Duplicate", description: `Invoice ${invoice.invoice_number} approved.` });
-      navigate("/poc/exceptions");
+      navigate("/exceptions");
     } catch (err: any) {
       toast({ variant: "destructive", title: "Failed", description: err.message });
     } finally {
@@ -177,7 +177,7 @@ export default function ExceptionDetail() {
       // Audit is written server-side in the same transaction.
       toast({ title: isDuplicate ? "Declined as Duplicate" : "Invoice Declined", description: `Invoice ${invoice.invoice_number} declined.` });
       setDeclineDialogOpen(false);
-      navigate("/poc/exceptions");
+      navigate("/exceptions");
     } catch (err: any) {
       toast({ variant: "destructive", title: "Failed", description: err.message });
     } finally {
@@ -229,7 +229,7 @@ export default function ExceptionDetail() {
       await invoicesApi.returnToReview(invoice.id, "", "resolved", "validated");
       // Audit is written server-side in the same transaction.
       toast({ title: "Sent for Review", description: `Invoice ${invoice.invoice_number} has been returned to the Low Confidence queue for review.` });
-      navigate("/poc/exceptions");
+      navigate("/exceptions");
     } catch (err: any) {
       toast({ variant: "destructive", title: "Failed", description: err.message });
     } finally {
@@ -270,7 +270,7 @@ export default function ExceptionDetail() {
     <Layout>
       <div className="p-4 md:p-6 space-y-4">
         {/* Header */}
-        <button onClick={() => navigate("/poc/exceptions")}
+        <button onClick={() => navigate("/exceptions")}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to Exceptions
         </button>

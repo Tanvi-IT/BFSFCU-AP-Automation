@@ -55,17 +55,17 @@ const App = () => {
 
             {/* Admin */}
             <Route path="/settings/audit" element={<AuthGate><AuditConsole /></AuthGate>} />
-            <Route path="/poc/user-management" element={<AuthGate><UserManagement /></AuthGate>} />
+            <Route path="/user-management" element={<AuthGate><UserManagement /></AuthGate>} />
 
             {/* Processing queues */}
-            <Route path="/poc/upload" element={<AuthGate><POCUpload /></AuthGate>} />
-            <Route path="/poc/high-confidence" element={<AuthGate><HighConfidenceQueue /></AuthGate>} />
-            <Route path="/poc/high-confidence/:id" element={<AuthGate><HighConfidenceDetail /></AuthGate>} />
-            <Route path="/poc/low-confidence" element={<AuthGate><LowConfidenceList /></AuthGate>} />
-            <Route path="/poc/low-confidence/:id" element={<AuthGate><LowConfidenceQueue /></AuthGate>} />
-            <Route path="/poc/exceptions" element={<AuthGate><ExceptionsQueue /></AuthGate>} />
-            <Route path="/poc/exceptions/:id" element={<AuthGate><ExceptionDetail /></AuthGate>} />
-            <Route path="/poc/declined" element={<AuthGate><DeclinedQueue /></AuthGate>} />
+            <Route path="/upload" element={<AuthGate><POCUpload /></AuthGate>} />
+            <Route path="/high-confidence" element={<AuthGate><HighConfidenceQueue /></AuthGate>} />
+            <Route path="/high-confidence/:id" element={<AuthGate><HighConfidenceDetail /></AuthGate>} />
+            <Route path="/low-confidence" element={<AuthGate><LowConfidenceList /></AuthGate>} />
+            <Route path="/low-confidence/:id" element={<AuthGate><LowConfidenceQueue /></AuthGate>} />
+            <Route path="/exceptions" element={<AuthGate><ExceptionsQueue /></AuthGate>} />
+            <Route path="/exceptions/:id" element={<AuthGate><ExceptionDetail /></AuthGate>} />
+            <Route path="/declined" element={<AuthGate><DeclinedQueue /></AuthGate>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

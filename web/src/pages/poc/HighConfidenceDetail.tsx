@@ -434,7 +434,7 @@ export default function HighConfidenceDetail() {
           <CheckCircle2 className="mx-auto h-12 w-12 text-muted-foreground/50" />
           <h2 className="text-2xl font-bold mt-4">No High-Confidence Invoices</h2>
           <p className="text-muted-foreground mt-2">All invoices have been processed.</p>
-          <Button className="mt-4" onClick={() => navigate("/poc/high-confidence")}>
+          <Button className="mt-4" onClick={() => navigate("/high-confidence")}>
             Back to Queue
           </Button>
         </div>
@@ -460,7 +460,7 @@ export default function HighConfidenceDetail() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/poc/high-confidence")}>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/high-confidence")}>
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Back to List
               </Button>

@@ -149,7 +149,7 @@ export default function POCDashboard() {
           {/* High-Confidence - Light Green */}
           <Card 
             className="cursor-pointer hover:bg-muted/50 transition-colors border-success/30 bg-success/5"
-            onClick={() => navigate("/poc/high-confidence")}
+            onClick={() => navigate("/high-confidence")}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <div>
@@ -170,7 +170,7 @@ export default function POCDashboard() {
           {/* Low-Confidence - Light Red */}
           <Card 
             className="cursor-pointer hover:bg-muted/50 transition-colors border-destructive/30 bg-destructive/5"
-            onClick={() => navigate("/poc/low-confidence")}
+            onClick={() => navigate("/low-confidence")}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <div>
@@ -190,7 +190,7 @@ export default function POCDashboard() {
 
           <Card 
             className="cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => navigate("/poc/exceptions")}
+            onClick={() => navigate("/exceptions")}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <div>
@@ -210,7 +210,7 @@ export default function POCDashboard() {
 
           <Card 
             className="cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => navigate("/poc/declined")}
+            onClick={() => navigate("/declined")}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <div>

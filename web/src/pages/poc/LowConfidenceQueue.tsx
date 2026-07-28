@@ -518,10 +518,10 @@ export default function LowConfidenceQueue() {
 
   const advanceToNext = () => {
     if (currentIndex < invoices.length - 1) {
-      navigate(`/poc/low-confidence/${invoices[currentIndex + 1].id}`);
+      navigate(`/low-confidence/${invoices[currentIndex + 1].id}`);
     } else {
       // No more invoices, go back to list
-      navigate("/poc/low-confidence");
+      navigate("/low-confidence");
     }
   };
 
@@ -535,7 +535,7 @@ export default function LowConfidenceQueue() {
         title: "Submitted for Approval",
         description: `Invoice ${currentInvoice.invoice_number} has been submitted to Checker.`,
       });
-      navigate("/poc/low-confidence");
+      navigate("/low-confidence");
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -683,7 +683,7 @@ export default function LowConfidenceQueue() {
           <AlertTriangle className="mx-auto h-12 w-12 text-muted-foreground/50" />
           <h2 className="text-2xl font-bold mt-4">No Low-Confidence Invoices</h2>
           <p className="text-muted-foreground mt-2">All invoices are ready for batch approval.</p>
-          <Link to="/poc/high-confidence">
+          <Link to="/high-confidence">
             <Button className="mt-4">Go to High-Confidence Queue</Button>
           </Link>
         </div>
@@ -698,7 +698,7 @@ export default function LowConfidenceQueue() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/poc/low-confidence")}>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/low-confidence")}>
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Back to List
               </Button>
@@ -729,7 +729,7 @@ export default function LowConfidenceQueue() {
               variant="outline"
               size="icon"
               disabled={currentIndex === 0}
-              onClick={() => navigate(`/poc/low-confidence/${invoices[currentIndex - 1].id}`)}
+              onClick={() => navigate(`/low-confidence/${invoices[currentIndex - 1].id}`)}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -737,7 +737,7 @@ export default function LowConfidenceQueue() {
               variant="outline"
               size="icon"
               disabled={currentIndex === invoices.length - 1}
-              onClick={() => navigate(`/poc/low-confidence/${invoices[currentIndex + 1].id}`)}
+              onClick={() => navigate(`/low-confidence/${invoices[currentIndex + 1].id}`)}
             >
               <ArrowRight className="h-4 w-4" />
             </Button>

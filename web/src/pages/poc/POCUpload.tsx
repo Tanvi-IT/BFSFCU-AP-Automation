@@ -102,16 +102,16 @@ async function runWithConcurrency<T>(
 function invoiceRoute(status: string | undefined, id: string | undefined): string {
   switch (status) {
     case "exception":
-      return `/poc/exceptions/${id}`;
+      return `/exceptions/${id}`;
     case "submitted":
-      return `/poc/high-confidence/${id}`;
+      return `/high-confidence/${id}`;
     case "approved":
       return "/invoices?status=approved";
     case "rejected":
     case "declined":
-      return "/poc/declined";
+      return "/declined";
     default: // validated / queued / processing
-      return `/poc/low-confidence/${id}`;
+      return `/low-confidence/${id}`;
   }
 }
 
@@ -546,7 +546,7 @@ export default function POCUpload() {
                 {doneCount > 0 && (
                   <Button
                     variant="outline"
-                    onClick={() => navigate("/poc/low-confidence")}
+                    onClick={() => navigate("/low-confidence")}
                   >
                     View Invoices
                   </Button>
