@@ -5,15 +5,16 @@ joining this repository cold, and covers what the code does not say about
 itself: why things are the way they are, which mistakes have already been made,
 and what will silently break.
 
-Last verified against the codebase 2026-07-21.
+Last verified against the codebase 2026-07-28.
 
 ---
 
 ## What this is
 
 A single-tenant accounts-payable system for a credit union. Invoices arrive,
-are extracted by AI, reviewed by one person, approved by a **different** person,
-and exported to an ERP.
+are extracted by AI, reviewed, and approved. **Any user can approve any invoice,
+including one they uploaded** — self-approval is allowed and flagged in the audit
+trail, not blocked (there is no enforced two-person separation).
 
 It is a rebuild of a Supabase application, forked in turn from a multi-tenant
 SaaS product. **Both ancestries leave traces**, and most surprises in this
@@ -63,8 +64,8 @@ being asked.
 ```
 api/src/
   index.ts                  every function module must be imported here
-  functions/http/           admin departments erp exports invoices me
-                            settings users vendors workflow
+  functions/http/           attachments auth demo departments integrations
+                            invoices me users vendors workflow
   functions/queue/          processInvoice.ts — the pipeline worker
   shared/
     handler.ts              createHandler / createMethodHandler — THE entry point
@@ -89,9 +90,9 @@ web/src/
   pages/          (26)      main pages
   pages/poc/      (16)      the queue-oriented pages actually used daily
 
-db/migrations/              0001..0008, applied in filename order
+db/migrations/              0001..0015, applied in filename order
 infra/                      main.bicep, provision.ps1
-docs/                       ARCHITECTURE, DEVELOPMENT, PRODUCTION
+ARCHITECTURE.md README.md   at repo root; DEVELOPER.md too (docs/ folder removed)
 ```
 
 ---
@@ -104,8 +105,12 @@ docs/                       ARCHITECTURE, DEVELOPMENT, PRODUCTION
 queued -> processing -> validated   (low confidence, needs review)
                      -> submitted   (high confidence, awaiting approval)
                      -> exception   (duplicate, extraction failure, anomaly)
-validated|submitted|exception -> approved | declined
+validated|submitted|exception -> approved | rejected
 ```
+
+The declined status value is **`rejected`**, not `declined` (the enum has both —
+0004 re-added `rejected` because the app uses it throughout; `QUEUE.declined =
+"rejected"`). The UI label is "Declined".
 
 Only `validated`, `submitted` and `exception` are approvable (`REVIEWABLE` in
 `repository/workflow.ts`).
@@ -118,6 +123,22 @@ any invoice, **including their own** — self-approval is NOT blocked. Instead t
 audit trail records the approver and flags `self_approved: true` (in both
 `approve()` and `approveMany()`). If a future requirement reinstates maker-checker
 separation, that flag/logic is where it goes.
+
+**Invoice GL coding — two fields.** `gl_code` is the **GL Account** (a 14-digit
+number, dashes allowed); `gl_approver` (added in migration **0015**) is the
+**GL Approver** name. The old single "GL (Approver)" field and the Department
+field were removed from the review UI — the `department_*` columns still exist
+but are unused. A new upload **inherits its vendor's most recent coded invoice**
+(approved first, then validated/submitted) at ingest: see `lastCodingForVendor` /
+`codingSuggestionForInvoice` in `repository/invoices.ts`, the
+`GET /invoices/{id}/suggested-coding` route, and `persist.ts` — which only fills
+a **blank** field, never overwriting a reviewer's coding.
+
+**Decline reason lives in `checker_comment`, NOT `decline_reason`.**
+`decline_reason` (migration 0002) is a legacy, unused column. The app writes and
+reads `checker_comment`, and a declined invoice has status **`rejected`** (not
+`declined`). Reading `decline_reason` yields "No reason provided" — a bug that has
+already hit the declined list and the server-side search.
 
 ---
 
@@ -140,10 +161,6 @@ fine and serves surviving routes. Always check for `function(s) are in error`.
 `npx tsc --noEmit -p tsconfig.app.json`. Three pre-existing `html2pdf` errors
 are expected; anything else is yours.
 
-**Token validation returns a deliberately opaque message.** To diagnose, decode
-the token's payload segment *without verifying* and compare `iss`, `aud`, `ver`
-against `config.auth`.
-
 ### IPv4 vs IPv6
 
 The Functions host and the Postgres container both bind IPv4 only; Node 17+
@@ -162,7 +179,10 @@ that looks exactly like an auth failure.
 - The cookie is httpOnly SameSite=Lax, same-origin via the `/api` proxy — the
   browser never handles the token.
 - **Entra/MSAL is gone.** `auth_provider`/`external_id` on the users table are the
-  seam to add SSO later. Default login: `admin@peapod.com` / `Invoice@approve`.
+  seam to add SSO later. The seeded local admin is `admin@peapod.com`; its
+  **dev-only** default password lives in `db/migrations/0009_local_auth.sql` (and
+  DEVELOPER.md) — rotate it for any real deployment. The live demo's password has
+  already been changed, so the seed default no longer works against live.
 
 ### Azure
 
@@ -183,10 +203,11 @@ spins forever. The stub returns a non-empty value purely so they pass. **Do not
 deleted in the sidebar cleanup, so far fewer remain than before.)
 
 **The sidebar and its pages were heavily trimmed.** Only Dashboard, the
-processing queues, and Administration (Upload Invoices, Vendors, Export History,
-User Management, Audit) remain. The ERP-admin / settings / intelligence / AI
-pages and their backend endpoints (settings.ts, admin.ts, most of erp.ts) were
-deleted. Their DB tables were left in place. Don't be surprised the code is gone.
+processing queues (High/Low Confidence, Exceptions, Declined, Approved), and
+Administration (Upload Invoices, Vendors, User Management, Audit) remain. The
+ERP-admin / settings / intelligence / AI pages and their backend endpoints
+(settings.ts, admin.ts, erp.ts, exports.ts) were deleted. Their DB tables were
+left in place. Don't be surprised the code is gone.
 
 **Some pages were bulk-scripted during the port** — roughly 18 settings and ERP
 pages. Four had their Supabase query builder stripped to `let query: any = null`
@@ -196,6 +217,33 @@ worked fine. Those four are fixed; if a settings or ERP page misbehaves,
 
 **"Clarus AP" branding** survives on some routed pages — another company's name,
 from the fork.
+
+### UI & routing (added 2026-07-28)
+
+**Routes dropped the `/poc/` prefix.** Queue pages are `/high-confidence`,
+`/low-confidence`, `/exceptions`, `/declined`, `/upload`, `/user-management`
+(consistent with `/invoices`). **The source folder is still `pages/poc/` and the
+imports still use it** — only route *strings* were renamed. Never rewrite the
+`pages/poc/` import paths (e.g. via a blind find-replace of `/poc/`). Approved
+invoices are the `/invoices?status=approved` view; bare `/invoices` redirects
+there and its heading reads "Approved".
+
+**Status tags go through `invoiceStatusLabel()`** (`web/src/lib/invoiceStatus.ts`):
+queued/processing/validated/submitted all render as **"In Queue"**;
+approved/exception/declined map to their own labels. The audit "In Queue" filter
+matches them by sending a **comma-separated** status set
+(`queued,processing,validated,submitted`); `repository/invoices.ts` `list()`
+accepts that and uses `status::text = ANY`. Server-side search covers invoice #,
+vendor, amount, and `checker_comment`.
+
+**The top banner is full-width, above the sidebar.** `Layout.tsx` renders it as a
+`fixed` bar and offsets the shadcn sidebar down with a `--header-height` CSS
+variable (fallback `0px`) added to `ui/sidebar.tsx`. Queue lists open a record on
+**row click** — the eye-icon action column was removed.
+
+**Queue pages gate their empty state on `hasLoaded`** (set only after a
+successful fetch), so a transient failure keeps the spinner and the 10-second
+poll recovers instead of flashing "no invoices".
 
 ---
 
@@ -212,7 +260,8 @@ cd web; npm run dev      # :8080
 cd api; npx tsc --noEmit
 cd web; npm run typecheck   # 3 pre-existing html2pdf errors
 
-# local database
+# local database (postgres/postgres is the local Docker default — a throwaway,
+# not a secret; there are no production credentials in this repo)
 $env:PGHOST='127.0.0.1'; $env:PGUSER='postgres'
 $env:PGPASSWORD='postgres'; $env:PGDATABASE='bfsfcu_ap'
 psql -c "SELECT invoice_number, status, confidence_score FROM invoices;"
@@ -224,16 +273,17 @@ psql -c "SELECT invoice_number, status, confidence_score FROM invoices;"
 
 ## Deployed environment
 
-Resource group `bfsfcuap-rg`, eastus2. Static Web App + Function App (Flex
-Consumption) + PostgreSQL Flexible Server 16 + Storage. AI comes from an
-existing multi-service resource in `rg-peapod-test`.
+The live demo runs **entirely in resource group `rg-peapod-test`**: Static Web
+App (`bfsfcuap-web`) + Function App (`bfsfcuap-api`, Flex Consumption) +
+PostgreSQL Flexible Server 16 (`bfsfcuap-pg`) + Storage, with AI from an existing
+multi-service resource in the same group.
 
-The Function App authenticates to Postgres with Managed Identity; the database
-role was created with `pgaadauth_create_principal_with_oid`, which exists only
-in the `postgres` database while roles are cluster-wide.
-
-AI access uses an **API key**, not Managed Identity, because the deploying
-account is Contributor and cannot create role assignments.
+Auth to every dependency is by **credential, not Managed Identity**: Postgres
+uses username/password (`PG_USE_MANAGED_IDENTITY=false`), Storage uses the
+`AzureWebJobsStorage` connection string (which also covers Blob + Queue), and AI
+uses an API key. The `infra/main.bicep` template describes a different,
+Managed-Identity-based target (`bfsfcuap-rg`) and is WIP — do not deploy from it.
+Deploy commands are in [DEVELOPER.md](DEVELOPER.md).
 
 ---
 

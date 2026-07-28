@@ -1,11 +1,12 @@
 # BFSFCU Accounts Payable
 
 Single-tenant accounts-payable system. Invoices arrive, are extracted by AI,
-reviewed by one person, approved by another, and exported to the ERP.
+reviewed, and approved, and recorded for audit. Any user can approve — including
+invoices they uploaded; self-approval is flagged, not blocked.
 
-Azure-native: Entra ID for identity, Azure Functions for the API, PostgreSQL,
-Blob and Queue Storage, Document Intelligence and Azure OpenAI. Rebuilt from a
-Supabase original, which is retired.
+Azure-native: local email/password auth (session cookie), Azure Functions for
+the API, PostgreSQL, Blob and Queue Storage, Document Intelligence and Azure
+OpenAI. Rebuilt from a Supabase original, which is retired.
 
 ---
 
@@ -14,10 +15,8 @@ Supabase original, which is retired.
 | Document | Read it when |
 |---|---|
 | **[CONTEXT.md](CONTEXT.md)** | You are an AI assistant, or a developer starting cold — conventions, traps, and what will silently break |
-| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | You need to understand how the system fits together, or why something is the way it is |
-| **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** | You are setting up locally, or debugging a local failure |
-| **[docs/PRODUCTION.md](docs/PRODUCTION.md)** | You are deploying, hardening for production, or setting up CI/CD |
-| **[infra/README.md](infra/README.md)** | You are provisioning Azure resources |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | You need to understand how the system fits together, or why something is the way it is |
+| **[DEVELOPER.md](DEVELOPER.md)** | You are setting up locally, debugging a local failure, or deploying |
 
 ---
 
@@ -25,25 +24,23 @@ Supabase original, which is retired.
 
 ```
 api/            Azure Functions — HTTP routes and the queue worker
-  src/shared/     the shared layer: auth, roles, db, logging, errors
+  src/shared/     the shared layer: auth, roles, db, logging, errors, pipeline
   src/functions/  thin route handlers (http / queue)
-web/            React SPA — Vite, MSAL
-  src/lib/api.ts    the only way the browser reaches the backend
-  src/authConfig.ts MSAL / Entra configuration
-db/migrations/  numbered SQL, applied in filename order
-infra/          Bicep template and provisioning script
-docs/           the documents above
+web/            React SPA (Vite)
+  src/lib/api.ts  the only way the browser reaches the backend
+db/migrations/  numbered SQL (0001..0015), applied in filename order
+infra/          Bicep template and provisioning script (WIP)
 ```
 
 ---
 
 ## Quick start
 
-Local development, assuming Node 20+, Docker and the Azure Functions Core
-Tools. Full detail in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Local development, assuming Node 20+, Docker, and the Azure Functions Core Tools.
+Full detail — including the AI keys you need — is in [DEVELOPER.md](DEVELOPER.md).
 
 ```powershell
-# database
+# database (then apply db/migrations in filename order — see DEVELOPER.md)
 docker run -d --name bfsfcu-pg -e POSTGRES_PASSWORD=postgres `
   -e POSTGRES_DB=bfsfcu_ap -p 5432:5432 postgres:17
 
@@ -57,23 +54,18 @@ cd api; npm install; npm start
 cd web; npm install; npm run dev
 ```
 
-You also need two Entra app registrations and a row in `users` — there is no
-signup. Both are covered in the development guide.
+There is no signup. Running the migrations seeds a local admin
+(`admin@peapod.com`); the dev-only default password is in
+[DEVELOPER.md](DEVELOPER.md). Rotate it for any real deployment.
 
 ---
 
 ## Deploying
 
-```powershell
-cd infra
-.\provision.ps1 -NamePrefix <prefix> `
-                -PostgresEntraAdminObjectId '<your-object-id>' `
-                -PostgresEntraAdminUpn '<you@company.com>' `
-                -PostgresAdminPassword (Read-Host 'pg password' -AsSecureString)
-```
-
-See [infra/README.md](infra/README.md) for prerequisites and the manual steps
-it prints at the end.
+Deployment is CLI-driven (Flex Consumption Functions + a Static Web App). The
+exact commands and the live-DB migration gotcha are in
+[DEVELOPER.md](DEVELOPER.md); the `infra/main.bicep` template is WIP and should
+not be deployed from as-is.
 
 ---
 
@@ -82,40 +74,34 @@ it prints at the end.
 These are load-bearing. Reversing one silently will break something subtle.
 
 **Single tenant.** No `tenant_id`, no tenant scoping, no RLS. Authorization is
-role-based, enforced in one place.
+role-based (`admin` / `user`), enforced in one place.
 
 **Everything goes through `api/src/shared`.** A handler that builds its own DB
 client, parses its own auth header, or sets its own CORS header is a bug — that
 duplication is exactly what this rebuild removed.
 
-**Uploads return immediately.** Extraction runs in a queue-triggered worker.
-The browser never waits on the AI pipeline.
+**Uploads return immediately.** Extraction runs in a queue-triggered worker; the
+browser never waits on the AI pipeline.
 
-**Identity and access are separate.** Entra proves who someone is; the `users`
-table decides whether they may use the application. A valid token with no row
-is rejected.
+**Auth is local, and thin.** Email/password with an HS256 session cookie; users
+are keyed on `id`, never email. `auth_provider` / `external_id` are the seam to
+add SSO later.
 
-**No secrets in the database.** Managed Identity where possible, Function App
-settings or Key Vault otherwise. The original stored provider keys in plaintext
-columns named `*_key_encrypted`.
+**No secrets in the database.** Function App settings (connection string / API
+keys) or Key Vault — never plaintext columns.
 
-**A submitter cannot approve their own invoice.** Enforced server-side, on
-`submitted_by`, inside the transaction — not in the browser, and not bypassed
-by `pp-superadmin`.
+**Any user can approve, but self-approval is flagged.** Approval is recorded in
+the audit trail with `self_approved` rather than blocked; that flag is where
+maker–checker separation would go if reinstated.
 
-**Faithful port, not a redesign.** The UI and behaviour deliberately match the
+**Faithful port, not a redesign.** UI and behaviour deliberately match the
 original so it stays testable against known-good behaviour.
 
 ---
 
 ## Not ported
 
-Each throws a clear "not available yet in the Azure build" error rather than
-failing silently:
-
-ERP export delivery and master-data sync (both were already stubs), AI
-field-mapping suggestions, supplemental PDF merge, contract processing, vendor
-enrichment and risk scoring, cash-flow forecast insights, email ingestion.
-
-Known gaps and rough edges are listed at the end of
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+ERP export delivery and master-data sync, AI field-mapping suggestions, contract
+processing, vendor enrichment and risk scoring, and cash-flow forecast insights
+are not carried over. Known gaps are listed at the end of
+[ARCHITECTURE.md](ARCHITECTURE.md).
