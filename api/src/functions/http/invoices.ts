@@ -185,22 +185,29 @@ app.http('invoices', {
             filename?: string;
             fileName?: string;
             attachments?: Array<{
+              // camelCase (documented) and PascalCase (raw Power Automate /
+              // Outlook "Attachments" output) are both accepted — JSON keys are
+              // case-sensitive, so the flow can pass the array through unmapped.
               contentBytes?: string;
+              ContentBytes?: string;
               pdf_base64?: string;
               name?: string;
+              Name?: string;
               filename?: string;
+              fileName?: string;
             }>;
           };
 
           // Multi-attachment. `contentBytes` / `name` is the Power Automate
-          // "Get attachments" shape; `pdf_base64` / `filename` is also accepted.
+          // "Attachments" shape; `pdf_base64` / `filename` is also accepted.
           if (Array.isArray(body.attachments)) {
             const items = body.attachments.map((a, i) => {
-              const raw = a.contentBytes ?? a.pdf_base64 ?? '';
+              const raw = a.contentBytes ?? a.ContentBytes ?? a.pdf_base64 ?? '';
               const b64 = raw.replace(/^data:[^;]*;base64,/, '').replace(/\s/g, '');
               return {
                 bytes: Buffer.from(b64, 'base64'),
-                filename: a.name || a.filename || `attachment-${i + 1}.pdf`,
+                filename:
+                  a.name || a.Name || a.filename || a.fileName || `attachment-${i + 1}.pdf`,
               };
             });
             return processBatch(items);
