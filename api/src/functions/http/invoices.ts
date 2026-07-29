@@ -35,6 +35,16 @@ const ALLOWED_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
 };
 
+/**
+ * A PDF starts with "%PDF-"; scan the first 1 KB since some files carry a few
+ * leading bytes before it. Used to keep PDFs and discard everything else when a
+ * batch of email attachments arrives, rather than trusting a filename or a
+ * caller-supplied content type.
+ */
+function looksLikePdf(bytes: Buffer): boolean {
+  return bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'));
+}
+
 // --------------------------------------------------------------------------
 // GET  /api/invoices    list
 // POST /api/invoices    upload
@@ -101,85 +111,161 @@ app.http('invoices', {
     POST: {
       roles: Roles.reviewer,
       handler: async ({ req, user, log }) => {
-        // Accept either a multipart/form-data upload (the browser) or a JSON
-        // body carrying a base64 PDF. Machine clients such as the Power
-        // Automate flow send { pdf_base64, filename }.
-        let bytes: Buffer;
-        let filename: string;
-        let contentType: string;
+        // Store one document: blob → queued invoice → pipeline job → audit.
+        // Duplicates are intentionally allowed; the worker's duplicate check
+        // supersedes an earlier pending copy or routes to Exceptions.
+        const persistUpload = async (
+          bytes: Buffer,
+          filename: string,
+          contentType: string,
+          source: 'manual_upload' | 'email_ingest' | 'api_ingest'
+        ): Promise<string> => {
+          const fileHash = createHash('sha256').update(bytes).digest('hex');
+          const blobPath = buildBlobPath(filename, randomUUID());
+          await uploadBlob(blobPath, bytes, contentType);
+          const { id } = await invoices.createQueued({
+            blobPath,
+            fileHash,
+            originalFilename: filename,
+            source,
+            submittedBy: user.id,
+          });
+          await enqueueInvoiceJob({ invoiceId: id, blobPath, fileHash, source });
+          await recordAudit({
+            entityType: 'invoice',
+            entityId: id,
+            action: 'uploaded',
+            userId: user.id,
+            metadata: { filename, bytes: bytes.length },
+          });
+          return id;
+        };
+
+        // A machine client (the email flow) can post every attachment from one
+        // email in a single request. Each PDF becomes its own invoice; any
+        // non-PDF attachment (inline images, logos, .docx …) is DISCARDED rather
+        // than failing the batch — one bad attachment can't sink the whole email.
+        const processBatch = async (items: Array<{ bytes: Buffer; filename: string }>) => {
+          const created: Array<{ invoiceId: string; filename: string }> = [];
+          const discarded: Array<{ filename: string; reason: string }> = [];
+          for (const { bytes, filename } of items) {
+            if (bytes.length === 0) {
+              discarded.push({ filename, reason: 'empty' });
+            } else if (bytes.length > MAX_UPLOAD_BYTES) {
+              discarded.push({ filename, reason: 'exceeds 20 MB' });
+            } else if (!looksLikePdf(bytes)) {
+              discarded.push({ filename, reason: 'not a PDF' });
+            } else {
+              const id = await persistUpload(bytes, filename, 'application/pdf', 'email_ingest');
+              created.push({ invoiceId: id, filename });
+            }
+          }
+          log.info('Batch upload processed', {
+            created: created.length,
+            discarded: discarded.length,
+          });
+          return accepted({
+            created,
+            discarded,
+            createdCount: created.length,
+            discardedCount: discarded.length,
+          });
+        };
 
         const reqContentType = req.headers.get('content-type') ?? '';
+
+        // ---- JSON: single { pdf_base64 } or a batch { attachments: [...] } ----
         if (reqContentType.includes('application/json')) {
           const body = (await req.json().catch(() => {
-            throw AppError.validation('Expected a JSON body with a "pdf_base64" field');
-          })) as { pdf_base64?: string; filename?: string; fileName?: string };
+            throw AppError.validation(
+              'Expected a JSON body with "pdf_base64" or an "attachments" array'
+            );
+          })) as {
+            pdf_base64?: string;
+            filename?: string;
+            fileName?: string;
+            attachments?: Array<{
+              contentBytes?: string;
+              pdf_base64?: string;
+              name?: string;
+              filename?: string;
+            }>;
+          };
+
+          // Multi-attachment. `contentBytes` / `name` is the Power Automate
+          // "Get attachments" shape; `pdf_base64` / `filename` is also accepted.
+          if (Array.isArray(body.attachments)) {
+            const items = body.attachments.map((a, i) => {
+              const raw = a.contentBytes ?? a.pdf_base64 ?? '';
+              const b64 = raw.replace(/^data:[^;]*;base64,/, '').replace(/\s/g, '');
+              return {
+                bytes: Buffer.from(b64, 'base64'),
+                filename: a.name || a.filename || `attachment-${i + 1}.pdf`,
+              };
+            });
+            return processBatch(items);
+          }
+
+          // Single PDF — unchanged request/response shape for existing callers.
           const raw = body?.pdf_base64;
           if (!raw || typeof raw !== 'string') {
-            throw AppError.validation('Missing "pdf_base64" in the request body');
-          }
-          // Tolerate a data: URI prefix and any whitespace/newlines.
-          const b64 = raw.replace(/^data:[^;]*;base64,/, '').replace(/\s/g, '');
-          bytes = Buffer.from(b64, 'base64');
-          filename = body.filename || body.fileName || 'invoice.pdf';
-          contentType = 'application/pdf';
-        } else {
-          const form = await req.formData().catch(() => {
             throw AppError.validation(
-              'Expected a multipart/form-data upload or a JSON body with pdf_base64'
+              'Missing "pdf_base64" or "attachments" in the request body'
             );
-          });
-          const file = form.get('file');
-          if (!file || typeof file === 'string') {
-            throw AppError.validation('No file was included in the upload');
           }
-          contentType = file.type || 'application/octet-stream';
-          bytes = Buffer.from(await file.arrayBuffer());
-          filename = (file as File).name || 'invoice.pdf';
+          const b64 = raw.replace(/^data:[^;]*;base64,/, '').replace(/\s/g, '');
+          const bytes = Buffer.from(b64, 'base64');
+          if (bytes.length === 0) throw AppError.validation('The uploaded file is empty');
+          if (bytes.length > MAX_UPLOAD_BYTES) {
+            throw AppError.validation('File exceeds the 20 MB limit');
+          }
+          const filename = body.filename || body.fileName || 'invoice.pdf';
+          const id = await persistUpload(bytes, filename, 'application/pdf', 'manual_upload');
+          log.info('Invoice queued', { invoiceId: id, bytes: bytes.length });
+          return accepted({ invoiceId: id, status: 'queued' });
         }
 
+        // ---- multipart/form-data: one browser file, or several (batch) -------
+        const form = await req.formData().catch(() => {
+          throw AppError.validation(
+            'Expected a multipart/form-data upload or a JSON body with pdf_base64/attachments'
+          );
+        });
+        const files = form
+          .getAll('file')
+          .filter((f) => typeof f !== 'string') as unknown as File[];
+        if (files.length === 0) {
+          throw AppError.validation('No file was included in the upload');
+        }
+
+        // Several files → same discard-non-PDF batch behaviour as the email flow.
+        if (files.length > 1) {
+          const items = await Promise.all(
+            files.map(async (f) => ({
+              bytes: Buffer.from(await f.arrayBuffer()),
+              filename: f.name || 'attachment.pdf',
+            }))
+          );
+          return processBatch(items);
+        }
+
+        // Single file keeps the browser's behaviour: PDF/PNG/JPEG allowed, and an
+        // unsupported type is a 400 the user sees, not a silent discard.
+        const file = files[0]!;
+        const contentType = file.type || 'application/octet-stream';
+        const bytes = Buffer.from(await file.arrayBuffer());
+        const filename = file.name || 'invoice.pdf';
         if (!ALLOWED_TYPES[contentType]) {
           throw AppError.validation(
             `Unsupported file type "${contentType}". Allowed: PDF, PNG, JPEG.`
           );
         }
-        if (bytes.length === 0) {
-          throw AppError.validation('The uploaded file is empty');
-        }
+        if (bytes.length === 0) throw AppError.validation('The uploaded file is empty');
         if (bytes.length > MAX_UPLOAD_BYTES) {
           throw AppError.validation('File exceeds the 20 MB limit');
         }
-
-        // Stored for reference/tracing. Duplicates are intentionally allowed:
-        // a re-upload creates a new invoice and the pipeline's duplicate check
-        // supersedes an earlier pending copy or routes the new one to
-        // Exceptions when an earlier copy is already approved.
-        const fileHash = createHash('sha256').update(bytes).digest('hex');
-
-        const blobPath = buildBlobPath(filename, randomUUID());
-
-        await uploadBlob(blobPath, bytes, contentType);
-
-        const { id } = await invoices.createQueued({
-          blobPath,
-          fileHash,
-          originalFilename: filename,
-          source: 'manual_upload',
-          submittedBy: user.id,
-        });
-
-        await enqueueInvoiceJob({ invoiceId: id, blobPath, fileHash, source: 'manual_upload' });
-
-        // Record who uploaded, so it appears in the audit trail.
-        await recordAudit({
-          entityType: 'invoice',
-          entityId: id,
-          action: 'uploaded',
-          userId: user.id,
-          metadata: { filename, bytes: bytes.length },
-        });
-
+        const id = await persistUpload(bytes, filename, contentType, 'manual_upload');
         log.info('Invoice queued', { invoiceId: id, bytes: bytes.length });
-
         return accepted({ invoiceId: id, status: 'queued' });
       },
     },
