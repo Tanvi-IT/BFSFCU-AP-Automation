@@ -5,7 +5,7 @@ joining this repository cold, and covers what the code does not say about
 itself: why things are the way they are, which mistakes have already been made,
 and what will silently break.
 
-Last verified against the codebase 2026-07-28.
+Last verified against the codebase 2026-07-30.
 
 ---
 
@@ -23,7 +23,8 @@ made sense in a multi-tenant SaaS, or under Supabase.
 
 Stack: Azure Functions (TypeScript) + React/Vite + PostgreSQL + local
 password auth (session cookie) + Blob/Queue Storage + Document Intelligence +
-Azure OpenAI.
+Azure OpenAI. Plus an **optional** Fiserv Prologue (SQL Server) write-back on
+approve, feature-flagged off by default (see "Prologue write-back" below).
 
 ---
 
@@ -73,6 +74,7 @@ api/src/
     authorize.ts            role checks. The only place.
     config.ts              every setting is read here and nowhere else
     db.ts errors.ts logger.ts cors.ts blob.ts queue.ts
+    prologue.ts             mssql client for the Prologue write-back (flag-gated)
     ai/                     credential documentIntelligence openai
     pipeline/               duplicateCheck persist routing vendorMatch
     repository/             activity invoices users vendors workflow
@@ -91,6 +93,8 @@ web/src/
   pages/poc/      (16)      the queue-oriented pages actually used daily
 
 db/migrations/              0001..0015, applied in filename order
+db/prologue/                tanvi_ap_integration.sql — Prologue stored-proc DDL
+                            (deployed by BankFund's DBA, not an app migration)
 infra/                      main.bicep, provision.ps1
 ARCHITECTURE.md README.md   at repo root; DEVELOPER.md too (docs/ folder removed)
 ```
@@ -139,6 +143,50 @@ a **blank** field, never overwriting a reviewer's coding.
 reads `checker_comment`, and a declined invoice has status **`rejected`** (not
 `declined`). Reading `decline_reason` yields "No reason provided" — a bug that has
 already hit the declined list and the server-side search.
+
+---
+
+## Prologue (Fiserv) write-back on approve
+
+An optional integration writes an approved invoice straight into Fiserv Prologue
+Financials (SQL Server) as an **unposted** AP transaction, so AP staff don't
+re-key it. It is **off unless `PROLOGUE_ENABLED=true`** — when off, `approve()`
+takes the plain-Postgres path and none of this runs. Deployed off.
+
+- **Cross-database, no shared transaction.** The app DB is Postgres; Prologue is
+  SQL Server. There is no ACID transaction across both. The design is
+  **Prologue-first**: `approve()` stages the transaction in Prologue inside the
+  same `FOR UPDATE` row lock and only flips the invoice to `approved` once
+  Prologue returns a transaction id. The proc's duplicate guard (`vendor_id` +
+  `vendor_document_number`) is the idempotency net if the local commit fails
+  after a successful insert.
+- **Reuses the fork's `erp_`/`push_` columns — no migration.** The Prologue
+  transaction id lands in `invoices.erp_reference_id`, with `erp_status` /
+  `push_status` = `synced`.
+- **Two stored procs, four tables.** `dbo.tanvi_get_batchid_4today` and
+  `dbo.tanvi_insert_ap_invoice` (DDL in `db/prologue/tanvi_ap_integration.sql`)
+  write only `am_table_next_key`, `co_batch`, `ap_transaction`,
+  `ap_transaction_detail`. Audit shadow rows (`zm_*`, `am_modifications_register`)
+  were deliberately dropped. The procs are **owned/deployed by BankFund's DBA**;
+  the app login needs EXECUTE on them only. Called via `mssql` from
+  `shared/prologue.ts`; posting is left to Prologue's own engine.
+- **Vendor id mapping is `vendors.external_id`** (= Prologue `ap_vendor.vendor_id`),
+  populated from the admin's uploaded vendor list — the existing `HEADER_MAP`
+  already maps a `vendor_id` column onto `external_id`. `approve()` **blocks**
+  (clear error, invoice stays queued) if the vendor is unmapped or
+  `gl_code`/dates/amount are missing — that is the "approve only if Prologue can
+  be updated" contract.
+- **Single-line GL (v1).** The full amount is coded to `gl_code`. The proc accepts
+  a multi-line array; only the mapping in `stageInPrologue()` sends one line.
+- **`gl_approver` is NOT sent.** `ap_transaction`/`ap_transaction_detail` have no
+  approver column; Prologue's approver lives in its Workflow (`wf_*`) module and
+  is a user id, not a name. Parked pending BankFund's workflow answer.
+  `transaction_type_id` is also left NULL in v1.
+- **Batch approve** pushes **per-invoice** when the flag is on (one bad invoice
+  doesn't roll back the rest) and returns a `failed[]` list.
+- **Config** is the `prologue` block in `config.ts` (`PROLOGUE_*` env vars).
+  `company_id` defaults to `01` and the default trade/misc/freight account to
+  `01886910800005`, both from BankFund sample data — confirm before go-live.
 
 ---
 

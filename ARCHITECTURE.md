@@ -10,7 +10,7 @@ multi-tenant SaaS). Both ancestries left traces; when something looks odd, ask
 whether it made sense under Supabase or in a multi-tenant product. See
 [CONTEXT.md](CONTEXT.md) for the traps that have already cost debugging time.
 
-Last verified against the codebase 2026-07-28.
+Last verified against the codebase 2026-07-30.
 
 ---
 
@@ -18,7 +18,8 @@ Last verified against the codebase 2026-07-28.
 
 React/Vite SPA · Azure Functions (TypeScript) · PostgreSQL Flexible Server ·
 Azure Blob + Queue Storage · Azure Document Intelligence + Azure OpenAI ·
-local email/password auth (HS256 session cookie).
+local email/password auth (HS256 session cookie). Optionally, a Fiserv Prologue
+(SQL Server, via `mssql`) write-back on approve — feature-flagged off by default.
 
 ```
 Browser (React SPA)
@@ -46,6 +47,7 @@ on the multi-second pipeline.
 | `web/` | React SPA (Vite). The only way it reaches the backend is `web/src/lib/api.ts`. |
 | `api/` | Azure Functions. Thin HTTP routes + the queue worker; all logic lives in `api/src/shared`. |
 | `db/migrations/` | Numbered SQL (`0001`..`0015`), applied in filename order. Idempotent — re-runnable. |
+| `db/prologue/` | `tanvi_ap_integration.sql` — the two Prologue stored procs. Deployed and owned by BankFund's DBA, **not** an app migration. |
 | `infra/` | Bicep template and provisioning script (WIP — do not deploy from `main.bicep`). |
 
 ### `api/src` layout
@@ -60,6 +62,7 @@ shared/
   authorize.ts           role checks (the only place)
   config.ts              every setting is read here and nowhere else
   db.ts errors.ts logger.ts cors.ts blob.ts queue.ts
+  prologue.ts            mssql client for the Prologue write-back (flag-gated)
   ai/                    credential · documentIntelligence · openai
   pipeline/              duplicateCheck · persist · routing · vendorMatch
   repository/            activity · invoices · users · vendors · workflow
@@ -149,6 +152,57 @@ queued → processing → validated   (low confidence, needs review)
                     → exception    (duplicate, extraction failure, anomaly)
 validated|submitted|exception → approved | rejected
 ```
+
+---
+
+## Prologue (Fiserv) write-back — optional, feature-flagged
+
+On approval the app can stage the invoice directly in Fiserv Prologue Financials
+(SQL Server) as an **unposted** AP transaction, removing the manual re-key. Off
+unless `PROLOGUE_ENABLED=true`; when off, `approve()` is unchanged.
+
+```
+Browser: Approve
+   │  POST /invoices/{id}/approve
+   ▼
+workflow.approve()          [Postgres BEGIN … FOR UPDATE OF i]
+   │  shared/prologue.ts (mssql)
+   ├─ EXEC dbo.tanvi_get_batchid_4today   → batch_id
+   ├─ EXEC dbo.tanvi_insert_ap_invoice    → transaction_id
+   ▼  on transaction_id: UPDATE invoices → approved, erp_reference_id = txid
+Postgres COMMIT  →  200 { id, status: "approved" }
+```
+
+**Prologue-first, no shared transaction.** Postgres and SQL Server cannot share a
+transaction, so the invoice moves to `approved` only after Prologue returns a
+transaction id. The proc's `vendor_id` + `vendor_document_number` duplicate guard
+makes a retry safe if the local commit fails after a successful insert. The
+Prologue transaction id is stored in the existing `erp_reference_id` column
+(`erp_status` / `push_status` = `synced`) — no migration.
+
+**Four tables, two stored procs** (`db/prologue/tanvi_ap_integration.sql`,
+deployed and owned by BankFund's DBA; the app login gets EXECUTE only):
+
+| Table | Op | Why |
+|---|---|---|
+| `am_table_next_key` | UPDATE | key allocation for the batch + transaction (tables aren't IDENTITY-keyed) |
+| `co_batch` | INSERT (once/day) | the batch the header lives in and is posted from |
+| `ap_transaction` | INSERT | AP header, unposted (`transaction_status = U`) |
+| `ap_transaction_detail` | INSERT | GL distribution line(s) |
+
+Posting is left to Prologue's own engine. **Field mapping** (`stageInPrologue()`):
+vendor → `vendors.external_id` (= Prologue `vendor_id`, from the uploaded vendor
+list); invoice #, date, due date, amount straight across; GL is a **single line**
+on `gl_code` (v1 — the proc accepts a multi-line array). `gl_approver` is **not**
+sent — the AP tables have no approver column (it lives in Prologue's `wf_*`
+workflow module, keyed by user id). `transaction_type_id` is left NULL in v1.
+`company_id` defaults `01` and the default trade/misc/freight account
+`01886910800005`, both from sample data — confirm before go-live.
+
+**Config** — the `prologue` block in `config.ts` (read nowhere else):
+`PROLOGUE_ENABLED`, `PROLOGUE_HOST` / `PORT` / `DATABASE` / `USER` / `PASSWORD`,
+`PROLOGUE_ENCRYPT`, `PROLOGUE_TRUST_SERVER_CERT`, `PROLOGUE_COMPANY_ID`,
+`PROLOGUE_DEFAULT_ACCOUNT`, `PROLOGUE_SOURCE_USER`. Requires the `mssql` package.
 
 ---
 

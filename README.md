@@ -6,7 +6,9 @@ invoices they uploaded; self-approval is flagged, not blocked.
 
 Azure-native: local email/password auth (session cookie), Azure Functions for
 the API, PostgreSQL, Blob and Queue Storage, Document Intelligence and Azure
-OpenAI. Rebuilt from a Supabase original, which is retired.
+OpenAI. Rebuilt from a Supabase original, which is retired. An optional,
+feature-flagged write-back stages approved invoices into Fiserv Prologue (SQL
+Server) — see below.
 
 ---
 
@@ -29,6 +31,7 @@ api/            Azure Functions — HTTP routes and the queue worker
 web/            React SPA (Vite)
   src/lib/api.ts  the only way the browser reaches the backend
 db/migrations/  numbered SQL (0001..0015), applied in filename order
+db/prologue/    Prologue stored-proc DDL (deployed by BankFund's DBA)
 infra/          Bicep template and provisioning script (WIP)
 ```
 
@@ -66,6 +69,21 @@ Deployment is CLI-driven (Flex Consumption Functions + a Static Web App). The
 exact commands and the live-DB migration gotcha are in
 [DEVELOPER.md](DEVELOPER.md); the `infra/main.bicep` template is WIP and should
 not be deployed from as-is.
+
+---
+
+## Prologue (Fiserv) integration
+
+An optional, feature-flagged write-back stages an approved invoice directly in
+Fiserv Prologue Financials (SQL Server) as an **unposted** AP transaction, so it
+isn't re-keyed. Off unless `PROLOGUE_ENABLED=true`; when off the app is unchanged
+(it is deployed off). On approve it calls two stored procs
+(`db/prologue/tanvi_ap_integration.sql`, deployed by BankFund's DBA) that write
+four tables — `am_table_next_key`, `co_batch`, `ap_transaction`,
+`ap_transaction_detail` — and records the returned transaction id on the invoice.
+Posting stays with Prologue's own engine. Design detail is in
+[ARCHITECTURE.md](ARCHITECTURE.md); env vars and deploy notes in
+[DEVELOPER.md](DEVELOPER.md).
 
 ---
 

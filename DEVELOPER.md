@@ -4,7 +4,7 @@ How to run the stack locally and the conventions to follow. Read
 [CONTEXT.md](CONTEXT.md) first for the traps, and [ARCHITECTURE.md](ARCHITECTURE.md)
 for how the pieces fit.
 
-Last verified 2026-07-28.
+Last verified 2026-07-30.
 
 ---
 
@@ -110,6 +110,13 @@ Local-only settings already in the example: `PG_HOST=127.0.0.1`,
 cookie is accepted over plain HTTP), and `AzureWebJobsStorage=UseDevelopmentStorage=true`.
 Every setting is read in `api/src/shared/config.ts` and nowhere else.
 
+**Prologue (Fiserv) write-back** is optional and **off by default**
+(`PROLOGUE_ENABLED=false`) — leave it off for normal local work; nothing SQL
+Server-related runs. To exercise it you need a reachable SQL Server with the two
+procs deployed (`db/prologue/tanvi_ap_integration.sql`); fill in the `PROLOGUE_*`
+keys from `local.settings.json.example`. The `mssql` driver is already in
+`package.json`.
+
 The web app needs no cloud config — the Vite dev server proxies `/api` to
 `:7071`, so the session cookie is same-origin.
 
@@ -186,6 +193,13 @@ swa deploy ./dist --deployment-token "$(az staticwebapp secrets list -g rg-peapo
 DDL migrations against the live DB must run as the Entra owner (the app role
 isn't the table owner). Full resource names, the ownership gotcha, and the exact
 migration command are in the deployment notes — ask before redeploying.
+
+**Prologue write-back.** The two stored procs
+(`db/prologue/tanvi_ap_integration.sql`) are deployed and owned by BankFund's
+DBA — they are not part of the app deploy; the app's SQL login needs EXECUTE on
+them only. Turn the integration on per environment with the `PROLOGUE_*` app
+settings (`PROLOGUE_ENABLED=true`, host/db/user/password, etc.). It is currently
+deployed with `PROLOGUE_ENABLED=false`.
 
 ---
 
