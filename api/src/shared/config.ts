@@ -143,6 +143,63 @@ export const config = {
     },
   },
 
+  /**
+   * Fiserv Prologue Financials (SQL Server) integration.
+   *
+   * On invoice approval the app stages an unposted AP transaction in Prologue by
+   * calling two stored procedures. The whole integration is inert unless
+   * `PROLOGUE_ENABLED` is true, so a deployment without SQL Server connectivity
+   * behaves exactly as before until the flag is flipped.
+   *
+   * host/database/user use an empty-string fallback (not `required`) so config
+   * never throws at import when the integration is off; `shared/prologue.ts`
+   * fails with a clear error if the flag is on but a value is missing.
+   *
+   * companyId and defaultAccount default to the values observed in BankFund's
+   * Prologue sample data (`company_id = '01'`, default GL account
+   * '01886910800005'); confirm both with BankFund before go-live.
+   */
+  prologue: {
+    get enabled() {
+      return bool('PROLOGUE_ENABLED', false);
+    },
+    get host() {
+      return optional('PROLOGUE_HOST', '');
+    },
+    get port() {
+      return int('PROLOGUE_PORT', 1433);
+    },
+    get database() {
+      return optional('PROLOGUE_DATABASE', '');
+    },
+    get user() {
+      return optional('PROLOGUE_USER', '');
+    },
+    /** Keep in Key Vault / Function App settings — never in the repo. */
+    get password() {
+      return process.env['PROLOGUE_PASSWORD'] ?? '';
+    },
+    /** TLS to SQL Server. True by default; most Azure SQL requires it. */
+    get encrypt() {
+      return bool('PROLOGUE_ENCRYPT', true);
+    },
+    /** Only for a self-signed server cert on a trusted network. */
+    get trustServerCertificate() {
+      return bool('PROLOGUE_TRUST_SERVER_CERT', false);
+    },
+    get companyId() {
+      return optional('PROLOGUE_COMPANY_ID', '01');
+    },
+    /** trade_discount / misc / freight default account (all three, per sample). */
+    get defaultAccount() {
+      return optional('PROLOGUE_DEFAULT_ACCOUNT', '01886910800005');
+    },
+    /** Written to Prologue audit rows as the source system user. */
+    get sourceUser() {
+      return optional('PROLOGUE_SOURCE_USER', 'TANVI');
+    },
+  },
+
   http: {
     get allowedOrigins() {
       return optional('ALLOWED_ORIGINS', '')

@@ -37,7 +37,7 @@ app.http('invoice-approve', {
     const body = await readJson(req);
     const note = typeof body['note'] === 'string' ? body['note'] : undefined;
 
-    await workflow.approve(id, user.id, note);
+    await workflow.approve(id, user.id, note, user.fullName ?? user.email ?? user.id);
     log.info('Invoice approved', { invoiceId: id });
 
     return ok({ id, status: 'approved' });
@@ -75,10 +75,15 @@ app.http('invoices-batch-approve', {
     if (ids.length === 0) throw AppError.validation('invoiceIds is required');
     if (ids.length > 500) throw AppError.validation('Cannot approve more than 500 at once');
 
-    const result = await workflow.approveMany(ids, user.id);
+    const result = await workflow.approveMany(
+      ids,
+      user.id,
+      user.fullName ?? user.email ?? user.id
+    );
     log.info('Batch approval', {
       approved: result.approved.length,
       skipped: result.skipped.length,
+      failed: result.failed.length,
     });
 
     return ok(result);

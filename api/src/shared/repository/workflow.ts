@@ -7,6 +7,7 @@
 
 import { transaction } from '../db';
 import { AppError } from '../errors';
+import * as prologue from '../prologue';
 import type { InvoiceStatus } from './invoices';
 
 interface StatusRow {
@@ -15,17 +16,87 @@ interface StatusRow {
   approved_at: string | null;
 }
 
+/**
+ * The invoice + vendor fields needed to stage a transaction in Prologue.
+ * Selected alongside the status row when the integration is enabled.
+ */
+interface PrologueSourceRow {
+  invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  total_amount: string | null;
+  gl_code: string | null;
+  vendor_external_id: string | null;
+  vendor_name: string | null;
+}
+
 /** Statuses from which an invoice may still be approved or declined. */
 const REVIEWABLE: readonly InvoiceStatus[] = ['validated', 'submitted', 'exception'];
+
+/**
+ * Map a locked invoice row to Prologue proc inputs and stage it, returning the
+ * Prologue transaction id. Throws `AppError` (validation / upstream / conflict)
+ * on any gap or failure so the caller aborts the local approval — "move to
+ * approved only if Prologue was updated".
+ *
+ * v1 is single-line GL: the full amount is coded to `gl_code`.
+ */
+async function stageInPrologue(
+  src: PrologueSourceRow,
+  approverName: string
+): Promise<prologue.PrologueResult> {
+  const missing: string[] = [];
+  if (!src.vendor_external_id) missing.push('vendor is not mapped to a Prologue vendor id');
+  if (!src.gl_code) missing.push('GL account (gl_code) is not set');
+  if (!src.invoice_number) missing.push('invoice number is missing');
+  if (!src.invoice_date) missing.push('invoice date is missing');
+  if (!src.due_date) missing.push('due date is missing');
+  const amount = src.total_amount != null ? Number(src.total_amount) : NaN;
+  if (!Number.isFinite(amount) || amount <= 0) missing.push('total amount is invalid');
+
+  if (missing.length > 0) {
+    throw AppError.validation(
+      `Cannot post to Prologue — ${missing.join('; ')}. Fix the invoice and approve again.`
+    );
+  }
+
+  return prologue.pushInvoice({
+    vendorId: src.vendor_external_id!,
+    vendorDocumentNumber: src.invoice_number!,
+    vendorDocumentDate: src.invoice_date!,
+    dueDate: src.due_date!,
+    description: `${src.vendor_name ?? ''} ${src.invoice_number}`.trim(),
+    totalAmount: amount,
+    glAccountId: src.gl_code!,
+    // transactionTypeId left NULL in v1 — AP staff assign the payment method.
+    approverName,
+  });
+}
 
 export async function approve(
   invoiceId: string,
   actorId: string,
-  note?: string
+  note?: string,
+  approverName?: string
 ): Promise<void> {
   await transaction(async (client) => {
-    const found = await client.query<StatusRow & { submitted_by: string | null }>(
-      `SELECT id, status, approved_at, submitted_by FROM invoices WHERE id = $1 FOR UPDATE`,
+    // When Prologue is on, read the extra fields it needs in the same locked
+    // read, so the row cannot change between the push and the local commit.
+    const columns = prologue.isEnabled()
+      ? `i.id, i.status, i.approved_at, i.submitted_by,
+         i.invoice_number, i.invoice_date::text AS invoice_date,
+         i.due_date::text AS due_date, i.total_amount::text AS total_amount,
+         i.gl_code, v.external_id AS vendor_external_id, v.name AS vendor_name`
+      : `i.id, i.status, i.approved_at, i.submitted_by`;
+
+    const found = await client.query<
+      StatusRow & { submitted_by: string | null } & Partial<PrologueSourceRow>
+    >(
+      `SELECT ${columns}
+         FROM invoices i
+         LEFT JOIN vendors v ON v.id = i.vendor_id
+        WHERE i.id = $1
+          FOR UPDATE OF i`,
       [invoiceId]
     );
 
@@ -39,13 +110,27 @@ export async function approve(
       throw AppError.conflict(`An invoice with status "${invoice.status}" cannot be approved`);
     }
 
+    // Prologue-first: stage the transaction and only then flip to approved. Any
+    // failure throws, rolling back this transaction so the invoice is untouched.
+    let prologueRef: prologue.PrologueResult | undefined;
+    if (prologue.isEnabled()) {
+      prologueRef = await stageInPrologue(
+        invoice as PrologueSourceRow,
+        approverName ?? actorId
+      );
+    }
+
     await client.query(
       `UPDATE invoices
           SET status = 'approved', approved_by = $2, approved_at = now(),
               transaction_date = (now() AT TIME ZONE 'America/New_York')::date,
-              declined_by = NULL, declined_at = NULL, checker_comment = NULL
+              declined_by = NULL, declined_at = NULL, checker_comment = NULL,
+              erp_status = CASE WHEN $3::text IS NULL THEN erp_status ELSE 'synced' END,
+              erp_reference_id = COALESCE($3, erp_reference_id),
+              erp_last_synced_at = CASE WHEN $3::text IS NULL THEN erp_last_synced_at ELSE now() END,
+              push_status = CASE WHEN $3::text IS NULL THEN push_status ELSE 'synced' END
         WHERE id = $1`,
-      [invoiceId, actorId]
+      [invoiceId, actorId, prologueRef ? String(prologueRef.transactionId) : null]
     );
 
     // Any user may approve any invoice. Accountability is via the audit trail;
@@ -59,7 +144,13 @@ export async function approve(
       [
         invoiceId,
         actorId,
-        JSON.stringify({ from: invoice.status, note: note ?? null, self_approved: selfApproved }),
+        JSON.stringify({
+          from: invoice.status,
+          note: note ?? null,
+          self_approved: selfApproved,
+          prologue_transaction_id: prologueRef?.transactionId ?? null,
+          prologue_batch_id: prologueRef?.batchId ?? null,
+        }),
       ]
     );
   });
@@ -360,9 +451,36 @@ export async function applyCodingToVendor(
  */
 export async function approveMany(
   invoiceIds: readonly string[],
-  actorId: string
-): Promise<{ approved: string[]; skipped: string[] }> {
-  if (invoiceIds.length === 0) return { approved: [], skipped: [] };
+  actorId: string,
+  approverName?: string
+): Promise<{ approved: string[]; skipped: string[]; failed: { id: string; error: string }[] }> {
+  if (invoiceIds.length === 0) return { approved: [], skipped: [], failed: [] };
+
+  // When Prologue is on, each invoice is a separate cross-system operation:
+  // stage in Prologue, then commit locally. One rejection (duplicate, unmapped
+  // vendor, bad GL) must not roll back the others, so each runs in its own
+  // transaction via approve(). Already-approved rows surface as skipped.
+  if (prologue.isEnabled()) {
+    const approved: string[] = [];
+    const skipped: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+
+    for (const id of invoiceIds) {
+      try {
+        await approve(id, actorId, undefined, approverName);
+        approved.push(id);
+      } catch (err) {
+        if (err instanceof AppError && err.status === 409) {
+          // already approved / status conflict — consistent with the bulk path
+          skipped.push(id);
+        } else {
+          failed.push({ id, error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+    }
+
+    return { approved, skipped, failed };
+  }
 
   return transaction(async (client) => {
     // Which of these were submitted by the approver — flagged in the audit
@@ -385,6 +503,7 @@ export async function approveMany(
 
     const approved = result.rows.map((r) => r.id);
     const skipped = invoiceIds.filter((id) => !approved.includes(id));
+    const failed: { id: string; error: string }[] = [];
 
     for (const id of approved) {
       await client.query(
@@ -398,6 +517,6 @@ export async function approveMany(
       );
     }
 
-    return { approved, skipped };
+    return { approved, skipped, failed };
   });
 }

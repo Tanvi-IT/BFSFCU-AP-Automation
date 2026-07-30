@@ -33,6 +33,21 @@
     "//AOAI_REASONING_MODEL": "true for gpt-5.x / o-series deployments, false for gpt-4o-style",
     "AOAI_REASONING_MODEL": "false",
 
+    "//PROLOGUE": "Fiserv Prologue (SQL Server) integration. Inert unless PROLOGUE_ENABLED=true. Put PROLOGUE_PASSWORD in Key Vault / Function App settings, never in a committed file.",
+    "PROLOGUE_ENABLED": "false",
+    "PROLOGUE_HOST": "<prologue-sql-server-host>",
+    "PROLOGUE_PORT": "1433",
+    "PROLOGUE_DATABASE": "<prologue-db-name>",
+    "PROLOGUE_USER": "<sql-login-with-execute-on-the-two-procs-only>",
+    "PROLOGUE_PASSWORD": "<sql-login-password>",
+    "//PROLOGUE_ENCRYPT": "true for TLS to SQL Server; set PROLOGUE_TRUST_SERVER_CERT=true only for a self-signed cert on a trusted network",
+    "PROLOGUE_ENCRYPT": "true",
+    "PROLOGUE_TRUST_SERVER_CERT": "false",
+    "//PROLOGUE_DEFAULTS": "company_id and default GL account observed in BankFund sample data; confirm before go-live",
+    "PROLOGUE_COMPANY_ID": "01",
+    "PROLOGUE_DEFAULT_ACCOUNT": "01886910800005",
+    "PROLOGUE_SOURCE_USER": "TANVI",
+
     "ALLOWED_ORIGINS": "http://localhost:8080",
     "LOG_LEVEL": "info"
   },
