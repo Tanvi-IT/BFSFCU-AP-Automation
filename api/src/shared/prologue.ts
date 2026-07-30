@@ -91,7 +91,7 @@ export interface PrologueInvoice {
   glAccountId: string;
   /** e.g. 'A/P Check', 'Wire', 'ACH Direct Debit'; NULL lets AP staff assign. */
   transactionTypeId?: string | null;
-  /** Approver display name, for the Prologue audit trail. */
+  /** Approver display name, recorded on the batch (co_batch.approval_user_id). */
   approverName: string;
 }
 
@@ -141,7 +141,6 @@ export async function pushInvoice(inv: PrologueInvoice): Promise<PrologueResult>
   req.input('misc_account', sql.VarChar(32), config.prologue.defaultAccount);
   req.input('freight_account', sql.VarChar(32), config.prologue.defaultAccount);
   req.input('source_user', sql.VarChar(255), config.prologue.sourceUser);
-  req.input('approver_name', sql.VarChar(255), inv.approverName);
   req.output('return_trans_id', sql.Int);
   req.output('return_error', sql.VarChar(500));
   const res = await req.execute('dbo.tanvi_insert_ap_invoice');
