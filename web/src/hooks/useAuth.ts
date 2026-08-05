@@ -33,6 +33,7 @@ interface AuthContextValue {
   user: CurrentUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<SessionUser>;
+  signInWithEntra: (idToken: string) => Promise<SessionUser>;
   signOut: () => Promise<void>;
 }
 
@@ -65,6 +66,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return me;
   }, []);
 
+  const signInWithEntra = useCallback(async (idToken: string) => {
+    const me = await authApi.ssoLogin(idToken);
+    setUser(me as SessionUser);
+    return me;
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       await authApi.logout();
@@ -74,7 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  return createElement(AuthContext.Provider, { value: { user, loading, signIn, signOut } }, children);
+  return createElement(
+    AuthContext.Provider,
+    { value: { user, loading, signIn, signInWithEntra, signOut } },
+    children
+  );
 }
 
 export const useAuth = () => {
@@ -82,7 +93,7 @@ export const useAuth = () => {
   if (!ctx) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
-  const { user, loading, signIn, signOut } = ctx;
+  const { user, loading, signIn, signInWithEntra, signOut } = ctx;
 
   const role = user?.role;
   const isAdmin = role === "admin";
@@ -93,6 +104,7 @@ export const useAuth = () => {
     isAuthenticated: !!user,
 
     signIn,
+    signInWithEntra,
     signOut,
 
     isAdmin,

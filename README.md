@@ -102,8 +102,10 @@ duplication is exactly what this rebuild removed.
 browser never waits on the AI pipeline.
 
 **Auth is local, and thin.** Email/password with an HS256 session cookie; users
-are keyed on `id`, never email. `auth_provider` / `external_id` are the seam to
-add SSO later.
+are keyed on `id`, never email. Optional **Microsoft Entra SSO** is layered on
+the `auth_provider` / `external_id` seam and admin-configured in User Management —
+it issues the same session cookie, so it's a second identity source, not a
+rewrite. Match-existing-only; no client secret is stored.
 
 **No secrets in the database.** Function App settings (connection string / API
 keys) or Key Vault — never plaintext columns.

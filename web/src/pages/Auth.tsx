@@ -13,12 +13,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
-import { ApiError } from "@/lib/api";
+import { ApiError, authApi, type SsoPublicConfig } from "@/lib/api";
+import { signInWithMicrosoft } from "@/lib/entra";
 import peapodLogo from "@/assets/tenant-logos/peapod-logo.png";
 import { Loader2, LogIn } from "lucide-react";
 
 const Auth = () => {
-  const { signIn, isAuthenticated, loading } = useAuth();
+  const { signIn, signInWithEntra, isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -26,11 +27,42 @@ const Auth = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [ssoConfig, setSsoConfig] = useState<SsoPublicConfig | null>(null);
+  const [ssoSubmitting, setSsoSubmitting] = useState(false);
+
   useEffect(() => {
     if (isAuthenticated) {
       navigate("/dashboard", { replace: true });
     }
   }, [isAuthenticated, navigate]);
+
+  useEffect(() => {
+    authApi
+      .ssoConfig()
+      .then(setSsoConfig)
+      .catch(() => setSsoConfig({ enabled: false }));
+  }, []);
+
+  const handleEntra = async () => {
+    if (!ssoConfig?.enabled || !ssoConfig.tenantId || !ssoConfig.clientId) return;
+    setError(null);
+    setSsoSubmitting(true);
+    try {
+      const idToken = await signInWithMicrosoft(ssoConfig.tenantId, ssoConfig.clientId);
+      await signInWithEntra(idToken);
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        setError("No account is set up for this Microsoft user. Contact an administrator.");
+      } else if (err instanceof ApiError && err.status === 401) {
+        setError("Microsoft sign-in could not be verified.");
+      } else {
+        setError("Microsoft sign-in did not complete.");
+      }
+    } finally {
+      setSsoSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,6 +142,33 @@ const Auth = () => {
               )}
             </Button>
           </form>
+
+          {ssoConfig?.enabled && (
+            <>
+              <div className="my-4 flex items-center gap-3">
+                <div className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">or</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                size="lg"
+                disabled={ssoSubmitting}
+                onClick={handleEntra}
+              >
+                {ssoSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Connecting…
+                  </>
+                ) : (
+                  "Sign in with Microsoft"
+                )}
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

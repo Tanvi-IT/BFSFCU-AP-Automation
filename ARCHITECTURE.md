@@ -96,8 +96,14 @@ collapsing them onto a single role set is a privilege escalation.
 
 - **Auth is local email/password** with an HS256 session cookie (httpOnly,
   SameSite=Lax, same-origin via the `/api` proxy — the browser never handles the
-  token). Entra/MSAL is gone; `auth_provider` / `external_id` on `users` are the
-  seam to add SSO later without another rewrite.
+  token). **Microsoft Entra SSO** is implemented on the `auth_provider` /
+  `external_id` seam (optional, admin-configured): the SPA signs in with MSAL
+  (public client / PKCE), the backend verifies the Entra ID token
+  (`shared/entra.ts`) and issues the *same* session cookie — so SSO is just a
+  second identity source, and password login still works alongside it. Config
+  (`entra_*` in `app_settings`, migration 0016) is set in User Management;
+  match-existing-only, so an Entra user needs an admin-created account. No client
+  secret is stored (public client).
 - **Two roles** (`app_role` enum): `admin` and `user`. `admin` does everything
   (user management, vendor upload, audit); `user` does all invoice work,
   including approve. Never render a role name raw — use `roleLabel()` in

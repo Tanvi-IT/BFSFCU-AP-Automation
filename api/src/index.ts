@@ -13,6 +13,7 @@ import './functions/http/attachments';
 import './functions/http/workflow';
 import './functions/http/vendors';
 import './functions/http/users';
+import './functions/http/settings';
 import './functions/http/departments';
 import './functions/http/demo';
 import './functions/http/integrations';

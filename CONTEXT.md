@@ -38,11 +38,14 @@ the rebuild. Routes are thin; logic lives in `shared/repository`.
 **2. Two roles: `admin` and `user`.**
 admin can do everything (user management, vendor upload, audit); user does all
 invoice work including approve. `roleLabel()` in `web/src/lib/roles.ts` maps to
-display labels. (Auth is local email/password — NOT Entra. See the auth section.)
+display labels. (Auth is local email/password, plus optional Microsoft Entra SSO
+on the same session cookie. See the auth section.)
 
 **3. Users log in by email; identity is the session token's `sub` (= users.id).**
-`auth_provider` and `external_id` on the users table are the seam for adding SSO
-later without another rewrite.
+`auth_provider` and `external_id` link a user to an external identity provider.
+Microsoft Entra SSO is now implemented on this seam (optional, admin-configured)
+— it ends by issuing the same session token, so identity resolution downstream
+is unchanged. See "Entra SSO" below.
 
 **4. One `app.http()` registration per route.**
 Azure Functions permits exactly one. Methods sharing a path use
@@ -226,11 +229,32 @@ that looks exactly like an auth failure.
   for local HTTP (so the cookie is not marked Secure); omit it in Azure.
 - The cookie is httpOnly SameSite=Lax, same-origin via the `/api` proxy — the
   browser never handles the token.
-- **Entra/MSAL is gone.** `auth_provider`/`external_id` on the users table are the
-  seam to add SSO later. The seeded local admin is `admin@peapod.com`; its
-  **dev-only** default password lives in `db/migrations/0009_local_auth.sql` (and
-  DEVELOPER.md) — rotate it for any real deployment. The live demo's password has
-  already been changed, so the seed default no longer works against live.
+- **Microsoft Entra SSO is implemented on the `auth_provider`/`external_id` seam**
+  (optional — see "Entra SSO" below). Local email/password still works alongside
+  it. The seeded local admin is `admin@peapod.com`; its **dev-only** default
+  password lives in `db/migrations/0009_local_auth.sql` (and DEVELOPER.md) —
+  rotate it for any real deployment. The live demo's password has already been
+  changed, so the seed default no longer works against live.
+
+### Entra SSO (optional, admin-configured)
+
+Off unless an admin enables it in **User Management → Single Sign-On (Microsoft
+Entra)**; the config (`entra_enabled` / `entra_tenant_id` / `entra_client_id`,
+migration **0016**) lives in `app_settings`.
+
+- **Public client (PKCE), no secret.** The SPA signs in with MSAL
+  (`web/src/lib/entra.ts`), gets an **ID token**, and posts it to
+  `POST /api/auth/sso/entra`. The backend verifies it against Entra's JWKS
+  (`api/src/shared/entra.ts`), maps it to a user, and calls `signSession()` — so
+  the session cookie and everything downstream are identical to password login.
+  Only the (public) tenant/client ids are stored — nothing secret in the DB.
+- **Match-existing-only.** SSO logs in a user only if an admin already created
+  their account: matched by `external_id`, then email (linking `external_id` on
+  first login). Unknown Entra users are rejected — no self-provisioning.
+- **Login page** fetches `GET /api/auth/sso/config` and shows "Sign in with
+  Microsoft" only when enabled. Admin config is `GET/PUT /api/settings/sso`.
+- The app registration must list the site URL as a **SPA redirect URI**, and the
+  Function App needs outbound access to `login.microsoftonline.com` (JWKS).
 
 ### Azure
 

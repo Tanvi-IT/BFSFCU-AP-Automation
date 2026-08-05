@@ -107,3 +107,39 @@ export async function setPassword(userId: string, passwordHash: string): Promise
     [userId, passwordHash]
   );
 }
+
+/**
+ * Find the application user for an Entra sign-in.
+ *
+ * Match by `external_id` (the Entra object id) first — the stable link once
+ * established — then fall back to email so an admin-created local user can sign
+ * in via SSO the first time. Returns undefined if neither matches; SSO does not
+ * create accounts (match-existing-only), so the caller rejects unknown users.
+ */
+export async function findByEntra(
+  externalId: string,
+  email: string | null
+): Promise<(AppUser & { externalId: string | null }) | undefined> {
+  let row = await queryOne<UserRow & { external_id: string | null }>(
+    `SELECT id, email, full_name, role, is_active, auth_provider, external_id
+       FROM users WHERE external_id = $1`,
+    [externalId]
+  );
+  if (!row && email) {
+    row = await queryOne<UserRow & { external_id: string | null }>(
+      `SELECT id, email, full_name, role, is_active, auth_provider, external_id
+         FROM users WHERE lower(email) = lower($1)`,
+      [email]
+    );
+  }
+  return row ? { ...toUser(row), externalId: row.external_id } : undefined;
+}
+
+/** Store the Entra object id on first SSO login. Only fills a blank value. */
+export async function linkExternalId(userId: string, externalId: string): Promise<void> {
+  await queryOne(
+    `UPDATE users SET external_id = $2, updated_at = now()
+      WHERE id = $1 AND external_id IS NULL`,
+    [userId, externalId]
+  );
+}

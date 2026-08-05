@@ -222,9 +222,34 @@ export interface SessionUser {
   isActive: boolean;
 }
 
+/** Public Entra SSO status for the login page. */
+export interface SsoPublicConfig {
+  enabled: boolean;
+  tenantId?: string | null;
+  clientId?: string | null;
+}
+
+/** Full Entra SSO configuration (admin). */
+export interface SsoConfig {
+  enabled: boolean;
+  tenantId: string | null;
+  clientId: string | null;
+}
+
 export const authApi = {
   login: (email: string, password: string) =>
     api.post<SessionUser>("/auth/login", { email, password }),
   logout: () => api.post<{ ok: boolean }>("/auth/logout"),
   me: () => api.get<SessionUser>("/me"),
+
+  /** Whether the login page should offer Microsoft sign-in (+ its public ids). */
+  ssoConfig: () => api.get<SsoPublicConfig>("/auth/sso/config"),
+  /** Exchange a verified Entra ID token for an application session. */
+  ssoLogin: (idToken: string) => api.post<SessionUser>("/auth/sso/entra", { idToken }),
+};
+
+/** Admin settings API. */
+export const settingsApi = {
+  getSso: () => api.get<SsoConfig>("/settings/sso"),
+  putSso: (config: SsoConfig) => api.put<SsoConfig>("/settings/sso", config),
 };

@@ -5,6 +5,9 @@ import { usersApi, integrationsApi, type PowerAutomateKeyStatus } from "@/servic
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { settingsApi } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -155,6 +158,110 @@ function PowerAutomateKeyCard() {
   );
 }
 
+/** Admin-only card to configure Microsoft Entra single sign-on. */
+function EntraSsoCard() {
+  const { toast } = useToast();
+  const [enabled, setEnabled] = useState(false);
+  const [tenantId, setTenantId] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    settingsApi
+      .getSso()
+      .then((c) => {
+        setEnabled(c.enabled);
+        setTenantId(c.tenantId ?? "");
+        setClientId(c.clientId ?? "");
+      })
+      .catch(() => {
+        /* leave defaults; admin can still configure */
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    if (enabled && (!tenantId.trim() || !clientId.trim())) {
+      toast({
+        variant: "destructive",
+        title: "Missing values",
+        description: "Tenant ID and Client ID are required to enable SSO.",
+      });
+      return;
+    }
+    setSaving(true);
+    try {
+      const saved = await settingsApi.putSso({
+        enabled,
+        tenantId: tenantId.trim() || null,
+        clientId: clientId.trim() || null,
+      });
+      setEnabled(saved.enabled);
+      setTenantId(saved.tenantId ?? "");
+      setClientId(saved.clientId ?? "");
+      toast({
+        title: "SSO settings saved",
+        description: saved.enabled
+          ? "Microsoft sign-in is enabled."
+          : "Microsoft sign-in is disabled.",
+      });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Could not save", description: (err as Error)?.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="border rounded-lg p-6 mb-8 bg-card">
+      <div className="flex items-center gap-2 mb-1">
+        <Shield className="h-4 w-4 text-primary" />
+        <h2 className="font-semibold">Single Sign-On (Microsoft Entra)</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        When enabled, the sign-in page offers "Sign in with Microsoft". A user can sign in via Entra only
+        if an administrator has already created their account (matched by email). Register this site's URL
+        (<code className="text-xs break-all">{window.location.origin}</code>) as a SPA redirect URI in the
+        Entra app registration.
+      </p>
+
+      {loading ? (
+        <div className="text-sm text-muted-foreground">Loading…</div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Switch checked={enabled} onCheckedChange={setEnabled} id="sso-enabled" />
+            <Label htmlFor="sso-enabled">Enable Microsoft Entra sign-in</Label>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="sso-tenant">Directory (tenant) ID</Label>
+            <Input
+              id="sso-tenant"
+              value={tenantId}
+              onChange={(e) => setTenantId(e.target.value)}
+              placeholder="00000000-0000-0000-0000-000000000000"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="sso-client">Application (client) ID</Label>
+            <Input
+              id="sso-client"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="00000000-0000-0000-0000-000000000000"
+            />
+          </div>
+          <Button size="sm" onClick={() => void save()} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            Save
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface AppUser {
   id: string;
   email: string;
@@ -283,6 +390,7 @@ export default function UserManagement() {
 
         {/* Power Automate integration key */}
         <PowerAutomateKeyCard />
+        <EntraSsoCard />
 
         {/* Add User */}
         <div className="border rounded-lg p-6 mb-8 bg-card">
