@@ -151,14 +151,14 @@ export default function POCDashboard() {
             className="cursor-pointer hover:bg-muted/50 transition-colors border-success/30 bg-success/5"
             onClick={() => navigate("/high-confidence")}
           >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-1">
               <div>
                 <CardTitle className="text-sm font-bold">Batch Approval</CardTitle>
                 <p className="text-xs text-muted-foreground font-normal">High confidence</p>
               </div>
               <CheckCircle2 className="h-4 w-4 text-success" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 pb-4 pt-0">
               <div className="text-2xl font-bold">{stats.highConfidence}</div>
               <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                 <Clock className="h-3 w-3" />
@@ -172,14 +172,14 @@ export default function POCDashboard() {
             className="cursor-pointer hover:bg-muted/50 transition-colors border-destructive/30 bg-destructive/5"
             onClick={() => navigate("/low-confidence")}
           >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-1">
               <div>
                 <CardTitle className="text-sm font-bold">Requires Review</CardTitle>
                 <p className="text-xs text-muted-foreground font-normal">Low confidence</p>
               </div>
               <AlertTriangle className="h-4 w-4 text-destructive" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 pb-4 pt-0">
               <div className="text-2xl font-bold">{stats.lowConfidence}</div>
               <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                 <Clock className="h-3 w-3" />
@@ -192,14 +192,14 @@ export default function POCDashboard() {
             className="cursor-pointer hover:bg-muted/50 transition-colors"
             onClick={() => navigate("/exceptions")}
           >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-1">
               <div>
                 <CardTitle className="text-sm font-bold">Exceptions</CardTitle>
                 <p className="text-xs text-muted-foreground font-normal">Needs investigation</p>
               </div>
               <AlertOctagon className="h-4 w-4 text-destructive" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 pb-4 pt-0">
               <div className="text-2xl font-bold">{stats.exceptions}</div>
               <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                 <Clock className="h-3 w-3" />
@@ -212,14 +212,14 @@ export default function POCDashboard() {
             className="cursor-pointer hover:bg-muted/50 transition-colors"
             onClick={() => navigate("/declined")}
           >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-1">
               <div>
                 <CardTitle className="text-sm font-bold">Declined</CardTitle>
                 <p className="text-xs text-muted-foreground font-normal">Rejected invoices</p>
               </div>
               <XCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 pb-4 pt-0">
               <div className="text-2xl font-bold">{stats.declined}</div>
               <p className="text-xs text-muted-foreground mt-1">Read-only archive</p>
             </CardContent>
