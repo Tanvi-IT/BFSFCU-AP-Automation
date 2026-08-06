@@ -1,6 +1,6 @@
 import { ReactNode, CSSProperties } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import peapodLogo from "@/assets/tenant-logos/peapod-logo.png";
+import bfsfcuLogo from "@/assets/tenant-logos/bfsfcu-logo.svg";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
@@ -76,8 +76,8 @@ export const Layout = ({ children }: LayoutProps) => {
               </Button>
             )}
             <img
-              src={peapodLogo}
-              alt="PeaPod"
+              src={bfsfcuLogo}
+              alt="Bank Fund Credit Union"
               className="h-10 w-auto cursor-pointer"
               onClick={() => navigate("/dashboard")}
             />
