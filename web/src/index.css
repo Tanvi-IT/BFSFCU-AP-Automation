@@ -152,6 +152,12 @@
     @apply border-border;
   }
 
+  /* Global density: escrow's compact scale. Tailwind sizes in rem, so shrinking
+     the root font tightens text, padding, and spacing across the whole app at once. */
+  html {
+    font-size: 15px;
+  }
+
   body {
     @apply bg-background text-foreground antialiased font-sans;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
