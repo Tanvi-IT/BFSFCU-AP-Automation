@@ -94,12 +94,10 @@ const Auth = () => {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
-      <Card className="w-full max-w-md overflow-hidden">
-        <div className="bg-[#0C2D4D] px-6 py-8 text-center">
-          <img src={bfsfcuLogo} alt="Bank Fund Credit Union" className="mx-auto h-12 w-auto" />
-        </div>
+      <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Accounts Payable</CardTitle>
+          <img src={bfsfcuLogo} alt="Bank Fund Credit Union" className="mx-auto h-12 w-auto" />
+          <CardTitle className="mt-4 text-2xl">Accounts Payable</CardTitle>
           <CardDescription>Sign in to continue</CardDescription>
         </CardHeader>
         <CardContent>
