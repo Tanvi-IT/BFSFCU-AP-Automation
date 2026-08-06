@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAuth } from "@/hooks/useAuth";
 import { ApiError, authApi, type SsoPublicConfig } from "@/lib/api";
 import { signInWithMicrosoft } from "@/lib/entra";
-import bfsfcuLogo from "@/assets/tenant-logos/bfsfcu-logo.svg";
+import peapodLogo from "@/assets/tenant-logos/peapod-logo.png";
 import { Loader2, LogIn } from "lucide-react";
 
 const Auth = () => {
@@ -96,7 +96,7 @@ const Auth = () => {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <img src={bfsfcuLogo} alt="Bank Fund Credit Union" className="mx-auto h-12 w-auto" />
+          <img src={peapodLogo} alt="" className="mx-auto h-12 w-auto" />
           <CardTitle className="mt-4 text-2xl">Accounts Payable</CardTitle>
           <CardDescription>Sign in to continue</CardDescription>
         </CardHeader>
