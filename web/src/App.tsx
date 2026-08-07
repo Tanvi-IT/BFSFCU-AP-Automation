@@ -30,6 +30,7 @@ import LowConfidenceQueue from "./pages/poc/LowConfidenceQueue";
 import ExceptionsQueue from "@/pages/poc/ExceptionsQueue";
 import ExceptionDetail from "./pages/poc/ExceptionDetail";
 import DeclinedQueue from "./pages/poc/DeclinedQueue";
+import InboxMonitor from "./pages/poc/InboxMonitor";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +60,7 @@ const App = () => {
 
             {/* Processing queues */}
             <Route path="/upload" element={<AuthGate><POCUpload /></AuthGate>} />
+            <Route path="/inbox-monitor" element={<AuthGate><InboxMonitor /></AuthGate>} />
             <Route path="/high-confidence" element={<AuthGate><HighConfidenceQueue /></AuthGate>} />
             <Route path="/high-confidence/:id" element={<AuthGate><HighConfidenceDetail /></AuthGate>} />
             <Route path="/low-confidence" element={<AuthGate><LowConfidenceList /></AuthGate>} />

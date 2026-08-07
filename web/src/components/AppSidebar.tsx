@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Database,
   Loader2,
+  Inbox,
 } from "lucide-react";
 import {
   Sidebar,
@@ -65,6 +66,7 @@ const queueNavItems = [
 /** Administration — everyone sees the first three; the rest are admin-only. */
 const adminNavItems: { title: string; url: string; icon: typeof Upload; adminOnly?: boolean }[] = [
   { title: "Upload Invoices", url: "/upload", icon: Upload },
+  { title: "Inbox Monitor", url: "/inbox-monitor", icon: Inbox },
   { title: "Vendors", url: "/vendors", icon: Users },
   { title: "User Management", url: "/user-management", icon: UserCog, adminOnly: true },
   { title: "Audit", url: "/settings/audit", icon: ShieldCheck, adminOnly: true },
