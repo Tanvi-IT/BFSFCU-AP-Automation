@@ -135,6 +135,8 @@ export default function InboxMonitor() {
   // being investigated. The Source column shows each row's real tag.
   const [source, setSource] = useState<SourceFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   // Bump on every poll so relative ages / stuck detection re-render live.
   const [, setTick] = useState(0);
 
@@ -145,8 +147,19 @@ export default function InboxMonitor() {
       const rows = await invoicesApi.list({ limit: 200, order: "desc" });
       setInvoices(rows);
       setHasLoaded(true);
+      setLastUpdated(Date.now());
     } catch (error) {
       console.error("Error fetching inbox invoices:", error);
+    }
+  };
+
+  // Manual refresh, with visible feedback so the button never feels dead.
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchInvoices();
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -228,10 +241,23 @@ export default function InboxMonitor() {
               every 10s.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => void fetchInvoices()} className="gap-2">
-            <RefreshCcw className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-3">
+            {lastUpdated && (
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                Updated {new Date(lastUpdated).toLocaleTimeString("en-US")}
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefresh()}
+              disabled={isRefreshing}
+              className="gap-2"
+            >
+              <RefreshCcw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              {isRefreshing ? "Refreshing…" : "Refresh"}
+            </Button>
+          </div>
         </div>
 
         {/* Health summary */}
@@ -290,7 +316,7 @@ export default function InboxMonitor() {
                   <TableRow>
                     <TableHead>Received</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead>Vendor</TableHead>
+                    <TableHead>Vendor / File</TableHead>
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Health</TableHead>
@@ -328,8 +354,18 @@ export default function InboxMonitor() {
                           </span>
                         </TableCell>
                         <TableCell className="font-medium">
-                          {inv.vendor_name || (
-                            <span className="text-muted-foreground">Unknown</span>
+                          <div>
+                            {inv.vendor_name || (
+                              <span className="text-muted-foreground">Unknown</span>
+                            )}
+                          </div>
+                          {(inv.system_filename || inv.original_filename) && (
+                            <div
+                              className="text-xs text-muted-foreground truncate max-w-[240px]"
+                              title={inv.system_filename || inv.original_filename || ""}
+                            >
+                              {inv.system_filename || inv.original_filename}
+                            </div>
                           )}
                         </TableCell>
                         <TableCell>{displayInvoiceNumber(inv.invoice_number)}</TableCell>
@@ -350,7 +386,7 @@ export default function InboxMonitor() {
                         </TableCell>
                         <TableCell className="max-w-[280px]">
                           <span className="text-xs text-muted-foreground line-clamp-2">
-                            {h.detail || inv.original_filename || "—"}
+                            {h.detail || "—"}
                           </span>
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
