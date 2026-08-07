@@ -142,7 +142,16 @@ export default function POCUpload() {
 
   const fetchRecentUploads = async () => {
     try {
-      setRecentUploads(await invoicesApi.list({ limit: 10 }));
+      // Recent Uploads is the manual/direct-upload log for THIS page. Inbox
+      // (email/Power Automate) invoices have their own view — Inbox Monitor —
+      // so exclude them here. Fetch a wider page and keep the 10 most recent
+      // non-inbox uploads.
+      const rows = await invoicesApi.list({ limit: 40 });
+      setRecentUploads(
+        rows
+          .filter((r) => r.source !== "email_ingest" && r.source !== "email")
+          .slice(0, 10)
+      );
     } catch {
       setRecentUploads([]);
     }

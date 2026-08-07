@@ -24,8 +24,12 @@ import { Inbox, Loader2, Search, RefreshCcw } from "lucide-react";
  * `source` and `processing_error`) and filters client-side. No API change.
  */
 
-/** queued/processing older than this, with no result, is treated as stuck. */
-const STUCK_AFTER_MIN = 10;
+/**
+ * queued/processing older than this, with no result, is treated as stuck.
+ * Normal processing finishes in ~15s, so a few minutes with no terminal status
+ * is almost certainly stuck (worker died mid-run, or the job was never queued).
+ */
+const STUCK_AFTER_MIN = 3;
 
 type Tone = "green" | "blue" | "amber" | "red" | "gray";
 
@@ -68,7 +72,18 @@ function relativeAge(createdAt: string | undefined): string {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
+/** Compact elapsed label: seconds under a minute, then minutes, then hours. */
+function elapsedLabel(mins: number): string {
+  if (mins < 1) return `${Math.max(1, Math.round(mins * 60))}s`;
+  if (mins < 60) return `${Math.round(mins)}m`;
+  return `${Math.round(mins / 60)}h`;
+}
+
+type HealthKind = "processing" | "stuck" | "failed" | "review" | "done" | "other";
+
 interface Health {
+  /** Stable category for counting/icons — labels carry the elapsed time. */
+  kind: HealthKind;
   label: string;
   tone: Tone;
   /** true for states that need attention (stuck / failed / exception). */
@@ -82,37 +97,40 @@ function health(inv: Invoice): Health {
 
   if (isInFlight(inv.status)) {
     const age = ageMinutes(inv.created_at);
+    const el = elapsedLabel(age);
     if (age >= STUCK_AFTER_MIN) {
       return {
-        label: "Stuck",
+        kind: "stuck",
+        label: `Stuck (${el})`,
         tone: "red",
         attention: true,
-        detail: `No result after ${Math.round(age)} min — never finished processing`,
+        detail: `No result after ${el} — normal processing takes ~15s`,
       };
     }
-    return { label: "Processing…", tone: "blue", attention: false };
+    return { kind: "processing", label: `Processing… (${el})`, tone: "blue", attention: false };
   }
 
   switch (inv.status) {
     case "approved":
-      return { label: "Approved", tone: "green", attention: false };
+      return { kind: "done", label: "Approved", tone: "green", attention: false };
     case "rejected":
-      return { label: "Declined", tone: "gray", attention: false };
+      return { kind: "done", label: "Declined", tone: "gray", attention: false };
     case "exception":
-      return { label: "Exception", tone: "red", attention: true };
+      return { kind: "failed", label: "Exception", tone: "red", attention: true };
     case "submitted":
-      return { label: "In Review · High", tone: "blue", attention: false };
+      return { kind: "review", label: "In Review · High", tone: "blue", attention: false };
     case "validated":
       return failed
         ? {
+            kind: "failed",
             label: "Extraction failed",
             tone: "red",
             attention: true,
             detail: inv.processing_error || "No data could be extracted from the file",
           }
-        : { label: "In Review · Low", tone: "amber", attention: false };
+        : { kind: "review", label: "In Review · Low", tone: "amber", attention: false };
     default:
-      return { label: inv.status, tone: "gray", attention: false };
+      return { kind: "other", label: inv.status, tone: "gray", attention: false };
   }
 }
 
@@ -200,11 +218,11 @@ export default function InboxMonitor() {
   const summary = useMemo(() => {
     const s = { processing: 0, stuck: 0, failed: 0, review: 0, done: 0 };
     for (const inv of sourceFiltered) {
-      const h = health(inv);
-      if (h.label === "Processing…") s.processing += 1;
-      else if (h.label === "Stuck") s.stuck += 1;
-      else if (h.label === "Extraction failed" || h.label === "Exception") s.failed += 1;
-      else if (h.label.startsWith("In Review")) s.review += 1;
+      const k = health(inv).kind;
+      if (k === "processing") s.processing += 1;
+      else if (k === "stuck") s.stuck += 1;
+      else if (k === "failed") s.failed += 1;
+      else if (k === "review") s.review += 1;
       else s.done += 1;
     }
     return s;
@@ -378,7 +396,7 @@ export default function InboxMonitor() {
                               TONE_CLASS[h.tone]
                             }`}
                           >
-                            {h.label === "Processing…" && (
+                            {h.kind === "processing" && (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             )}
                             {h.label}
