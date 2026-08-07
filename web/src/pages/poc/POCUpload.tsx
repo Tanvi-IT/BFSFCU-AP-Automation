@@ -95,9 +95,16 @@ async function runWithConcurrency<T>(
 }
 
 /**
- * Where a "View" click should land, by invoice status. Each status goes to its
- * own queue page; approved goes to the Approved list (the sidebar view), never
- * the bare /invoices all-status page.
+ * Where a "View" click should land, by invoice status. Each review status goes
+ * to its own queue page; approved goes to the Approved list (the sidebar view),
+ * never the bare /invoices all-status page.
+ *
+ * `queued` / `processing` are NOT review states — the worker hasn't finished
+ * (or hasn't started) yet, so the invoice is in no review queue. Sending them to
+ * `/low-confidence/:id` renders that queue's "No Low-Confidence Invoices" empty
+ * state, which reads as "the invoice vanished". Route them to the single-invoice
+ * detail page instead, which loads any invoice by id and shows its real "In
+ * Queue" status. Only `validated` belongs in Low Confidence.
  */
 function invoiceRoute(status: string | undefined, id: string | undefined): string {
   switch (status) {
@@ -110,8 +117,10 @@ function invoiceRoute(status: string | undefined, id: string | undefined): strin
     case "rejected":
     case "declined":
       return "/declined";
-    default: // validated / queued / processing
+    case "validated":
       return `/low-confidence/${id}`;
+    default: // queued / processing — not in any review queue yet
+      return `/invoices/${id}`;
   }
 }
 
