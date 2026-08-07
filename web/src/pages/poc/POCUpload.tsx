@@ -697,13 +697,23 @@ export default function POCUpload() {
                           ? "⚠ Email — Needs Review"
                           : invoiceStatusLabel(inv.status)}
                       </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
-                      >
-                        View
-                      </Button>
+                      {/* Only offer "View" once the worker has finished — a
+                          queued/processing invoice has nothing to review yet and
+                          would route to the generic detail page. While in flight,
+                          show a Processing hint instead. */}
+                      {isInFlight(inv.status) ? (
+                        <span className="text-xs text-muted-foreground italic px-2">
+                          Processing…
+                        </span>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
+                        >
+                          View
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
