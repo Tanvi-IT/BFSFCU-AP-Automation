@@ -183,7 +183,7 @@ export async function pushInvoice(inv: PrologueInvoice): Promise<PrologueResult>
 
   // 1. Find or create today's pre-approved batch for our source tag.
   const batchReq = p.request();
-  batchReq.input('company_id', sql.VarChar(16), cfg.companyId);
+  // company_id is intentionally NOT sent — the stored procedure owns it (defaults to '01').
   batchReq.input('approver_name', sql.VarChar(255), inv.approverName);
   batchReq.output('return', sql.Int);
   const batchRes = await batchReq.execute('dbo.tanvi_get_batchid_4today');
@@ -207,11 +207,12 @@ export async function pushInvoice(inv: PrologueInvoice): Promise<PrologueResult>
   req.input('detail_total_amount', sql.Decimal(14, 2), inv.totalAmount);
   req.input('gl_detail_json', sql.NVarChar(sql.MAX), glDetailJson);
   req.input('transaction_type_id', sql.VarChar(16), inv.transactionTypeId ?? null);
-  req.input('company_id', sql.VarChar(16), cfg.companyId);
-  req.input('trade_discount_account', sql.VarChar(32), cfg.defaultAccount);
-  req.input('misc_account', sql.VarChar(32), cfg.defaultAccount);
-  req.input('freight_account', sql.VarChar(32), cfg.defaultAccount);
-  req.input('source_user', sql.VarChar(255), cfg.sourceUser);
+  // Posting defaults are intentionally NOT sent — the stored procedure owns them:
+  //   company_id (defaults '01'), source_user (defaults 'TANVI'), and the three
+  //   account params (trade_discount / misc / freight). NOTE: the proc currently
+  //   defaults those three accounts to NULL and REJECTS the insert with
+  //   "default accounts not configured" — so the DBA must set a real default for
+  //   them in the proc before Prologue write-back can be enabled.
   req.output('return_trans_id', sql.Int);
   req.output('return_error', sql.VarChar(500));
   const res = await req.execute('dbo.tanvi_insert_ap_invoice');
