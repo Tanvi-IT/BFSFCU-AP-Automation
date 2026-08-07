@@ -95,9 +95,12 @@ CREATE OR ALTER PROCEDURE dbo.tanvi_insert_ap_invoice
     @gl_detail_json           nvarchar(max),
     @transaction_type_id      varchar(16) = NULL,
     @company_id               varchar(16) = '01',
-    @trade_discount_account   varchar(32) = NULL,
-    @misc_account             varchar(32) = NULL,
-    @freight_account          varchar(32) = NULL,
+    -- Default trade-discount / misc / freight posting accounts. The app no longer
+    -- sends these, so the proc owns them. Change this value to BankFund's real
+    -- default account before go-live ('01886910800005' is sample data).
+    @trade_discount_account   varchar(32) = '01886910800005',
+    @misc_account             varchar(32) = '01886910800005',
+    @freight_account          varchar(32) = '01886910800005',
     @source_user              varchar(255) = 'TANVI',
     @return_trans_id          int OUTPUT,
     @return_error             varchar(500) OUTPUT
