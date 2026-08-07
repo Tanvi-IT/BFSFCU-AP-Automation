@@ -8,6 +8,8 @@
     "//SESSION_SECRET": "Strong random value used to sign session tokens. Use Key Vault in production.",
     "SESSION_SECRET": "<a-strong-random-secret>",
     "SESSION_TTL": "12h",
+    "//SETTINGS_ENC_KEY": "Key for encrypting secrets stored in the DB (the Prologue SQL password, configured via the admin UI). Falls back to SESSION_SECRET if unset. Set a dedicated value in production and do NOT rotate it without re-saving the settings.",
+    "SETTINGS_ENC_KEY": "",
     "//AUTH_COOKIE_INSECURE": "true only for local HTTP; omit in Azure so the cookie is Secure.",
     "AUTH_COOKIE_INSECURE": "true",
 

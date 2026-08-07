@@ -23,42 +23,65 @@
  */
 
 import sql from 'mssql';
-import { config } from './config';
 import { AppError } from './errors';
+import { getPrologueConfig, type PrologueConfig } from './repository/settings';
 
 let pool: sql.ConnectionPool | undefined;
 let connecting: Promise<sql.ConnectionPool> | undefined;
+/** Signature of the config the cached pool was built with; a change rebuilds it. */
+let poolSig: string | undefined;
 
-/** Whether the integration is switched on. Callers gate their work on this. */
-export function isEnabled(): boolean {
-  return config.prologue.enabled;
+/** Whether the integration is switched on. Reads the DB-backed config. */
+export async function isEnabled(): Promise<boolean> {
+  return (await getPrologueConfig()).enabled;
 }
 
-async function getPool(): Promise<sql.ConnectionPool> {
-  if (pool?.connected) return pool;
-  if (connecting) return connecting;
+function connectionSignature(c: PrologueConfig): string {
+  return [c.host, c.port, c.database, c.user, c.password, c.encrypt, c.trustServerCertificate].join(
+    '|'
+  );
+}
 
-  const { host, database, user } = config.prologue;
-  if (!host || !database || !user) {
-    throw AppError.upstream(
-      'Prologue is enabled but PROLOGUE_HOST/DATABASE/USER are not all configured.'
-    );
-  }
-
-  connecting = new sql.ConnectionPool({
-    server: host,
-    port: config.prologue.port,
-    database,
-    user,
-    password: config.prologue.password,
+function poolConfig(c: PrologueConfig): sql.config {
+  return {
+    server: c.host as string,
+    port: c.port,
+    database: c.database as string,
+    user: c.user as string,
+    password: c.password,
     options: {
-      encrypt: config.prologue.encrypt,
-      trustServerCertificate: config.prologue.trustServerCertificate,
+      encrypt: c.encrypt,
+      trustServerCertificate: c.trustServerCertificate,
     },
     pool: { max: 4, min: 0, idleTimeoutMillis: 30_000 },
     connectionTimeout: 10_000,
     requestTimeout: 20_000,
-  }).connect();
+  };
+}
+
+/**
+ * The shared connection pool for the current stored config. Rebuilt whenever the
+ * admin changes the connection (the config signature changes), so a settings
+ * update takes effect without a restart.
+ */
+async function poolFor(c: PrologueConfig): Promise<sql.ConnectionPool> {
+  if (!c.host || !c.database || !c.user) {
+    throw AppError.upstream(
+      'Prologue is enabled but the host, database, and user are not all configured.'
+    );
+  }
+  const sig = connectionSignature(c);
+  if (pool?.connected && poolSig === sig) return pool;
+  if (connecting && poolSig === sig) return connecting;
+
+  // Config changed (or first use): drop any stale pool before building a new one.
+  if (pool && poolSig !== sig) {
+    const old = pool;
+    pool = undefined;
+    old.close().catch(() => undefined);
+  }
+  poolSig = sig;
+  connecting = new sql.ConnectionPool(poolConfig(c)).connect();
 
   try {
     pool = await connecting;
@@ -66,11 +89,53 @@ async function getPool(): Promise<sql.ConnectionPool> {
     pool.on('error', (err) => console.error('[prologue] pool error', err.message));
     return pool;
   } catch (err) {
+    poolSig = undefined;
     throw AppError.upstream(
       `Prologue: cannot connect to SQL Server (${(err as Error).message}).`
     );
   } finally {
     connecting = undefined;
+  }
+}
+
+async function getPool(): Promise<sql.ConnectionPool> {
+  return poolFor(await getPrologueConfig());
+}
+
+/**
+ * Test a connection using the stored config, optionally overridden with values
+ * from an unsaved admin form. Returns a result instead of throwing so the UI can
+ * show success/failure, and uses a throwaway pool so it never disturbs the shared
+ * one.
+ */
+export async function testConnection(
+  override?: Partial<PrologueConfig>
+): Promise<{ ok: boolean; message: string }> {
+  const stored = await getPrologueConfig();
+  const c: PrologueConfig = { ...stored, ...override };
+  if (!c.host || !c.database || !c.user) {
+    return { ok: false, message: 'Host, database, and user are all required.' };
+  }
+  if (!c.password) {
+    return {
+      ok: false,
+      message: 'No password is set. Enter the SQL Server password and test again.',
+    };
+  }
+  let testPool: sql.ConnectionPool | undefined;
+  try {
+    testPool = await new sql.ConnectionPool({
+      ...poolConfig(c),
+      pool: { max: 1, min: 0, idleTimeoutMillis: 5_000 },
+      connectionTimeout: 8_000,
+      requestTimeout: 8_000,
+    }).connect();
+    await testPool.request().query('SELECT 1 AS ok');
+    return { ok: true, message: 'Connected to SQL Server successfully.' };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  } finally {
+    if (testPool) testPool.close().catch(() => undefined);
   }
 }
 
@@ -108,11 +173,12 @@ export interface PrologueResult {
  * the reviewer sees why. Never returns a partial result.
  */
 export async function pushInvoice(inv: PrologueInvoice): Promise<PrologueResult> {
-  const p = await getPool();
+  const cfg = await getPrologueConfig();
+  const p = await poolFor(cfg);
 
   // 1. Find or create today's pre-approved batch for our source tag.
   const batchReq = p.request();
-  batchReq.input('company_id', sql.VarChar(16), config.prologue.companyId);
+  batchReq.input('company_id', sql.VarChar(16), cfg.companyId);
   batchReq.input('approver_name', sql.VarChar(255), inv.approverName);
   batchReq.output('return', sql.Int);
   const batchRes = await batchReq.execute('dbo.tanvi_get_batchid_4today');
@@ -136,11 +202,11 @@ export async function pushInvoice(inv: PrologueInvoice): Promise<PrologueResult>
   req.input('detail_total_amount', sql.Decimal(14, 2), inv.totalAmount);
   req.input('gl_detail_json', sql.NVarChar(sql.MAX), glDetailJson);
   req.input('transaction_type_id', sql.VarChar(16), inv.transactionTypeId ?? null);
-  req.input('company_id', sql.VarChar(16), config.prologue.companyId);
-  req.input('trade_discount_account', sql.VarChar(32), config.prologue.defaultAccount);
-  req.input('misc_account', sql.VarChar(32), config.prologue.defaultAccount);
-  req.input('freight_account', sql.VarChar(32), config.prologue.defaultAccount);
-  req.input('source_user', sql.VarChar(255), config.prologue.sourceUser);
+  req.input('company_id', sql.VarChar(16), cfg.companyId);
+  req.input('trade_discount_account', sql.VarChar(32), cfg.defaultAccount);
+  req.input('misc_account', sql.VarChar(32), cfg.defaultAccount);
+  req.input('freight_account', sql.VarChar(32), cfg.defaultAccount);
+  req.input('source_user', sql.VarChar(255), cfg.sourceUser);
   req.output('return_trans_id', sql.Int);
   req.output('return_error', sql.VarChar(500));
   const res = await req.execute('dbo.tanvi_insert_ap_invoice');

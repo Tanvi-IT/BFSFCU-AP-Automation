@@ -31,6 +31,7 @@ import ExceptionsQueue from "@/pages/poc/ExceptionsQueue";
 import ExceptionDetail from "./pages/poc/ExceptionDetail";
 import DeclinedQueue from "./pages/poc/DeclinedQueue";
 import InboxMonitor from "./pages/poc/InboxMonitor";
+import PrologueSettings from "./pages/poc/PrologueSettings";
 
 const queryClient = new QueryClient();
 
@@ -57,6 +58,7 @@ const App = () => {
             {/* Admin */}
             <Route path="/settings/audit" element={<AuthGate><AuditConsole /></AuthGate>} />
             <Route path="/user-management" element={<AuthGate><UserManagement /></AuthGate>} />
+            <Route path="/prologue" element={<AuthGate><PrologueSettings /></AuthGate>} />
 
             {/* Processing queues */}
             <Route path="/upload" element={<AuthGate><POCUpload /></AuthGate>} />

@@ -49,6 +49,16 @@ export const config = {
       return optional('SESSION_TTL', '12h');
     },
     /**
+     * Key for encrypting secrets stored in the database at rest — currently the
+     * Prologue SQL Server password (see shared/crypto.ts). Falls back to
+     * `sessionSecret` so it works without extra configuration; set a dedicated
+     * `SETTINGS_ENC_KEY` in production and DO NOT rotate it without re-saving the
+     * encrypted settings, or they can no longer be decrypted.
+     */
+    get settingsEncKey() {
+      return optional('SETTINGS_ENC_KEY', this.sessionSecret);
+    },
+    /**
      * Whether the session cookie is marked Secure. True in Azure (HTTPS);
      * false locally over plain HTTP so the cookie is accepted.
      */

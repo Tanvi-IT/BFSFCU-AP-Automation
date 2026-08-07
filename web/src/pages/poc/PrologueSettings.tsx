@@ -1,0 +1,310 @@
+import { useEffect, useState } from "react";
+import { Layout } from "@/components/Layout";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { settingsApi, type PrologueSettings as Settings, type PrologueUpdate } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Database, PlugZap, CheckCircle2, XCircle, Save } from "lucide-react";
+
+/**
+ * Admin page to configure the Fiserv Prologue (SQL Server) write-back connection
+ * — moved out of env vars so it can be set, tested, and enabled/disabled from the
+ * UI. The password is write-only: it's never returned by the API (only whether
+ * one is set), and it's stored encrypted at rest.
+ */
+export default function PrologueSettings() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const [enabled, setEnabled] = useState(false);
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("1433");
+  const [database, setDatabase] = useState("");
+  const [user, setUser] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordSet, setPasswordSet] = useState(false);
+  const [encrypt, setEncrypt] = useState(true);
+  const [trustCert, setTrustCert] = useState(false);
+  const [companyId, setCompanyId] = useState("01");
+  const [defaultAccount, setDefaultAccount] = useState("01886910800005");
+  const [sourceUser, setSourceUser] = useState("TANVI");
+
+  const applySettings = (c: Settings) => {
+    setEnabled(c.enabled);
+    setHost(c.host ?? "");
+    setPort(String(c.port ?? 1433));
+    setDatabase(c.database ?? "");
+    setUser(c.user ?? "");
+    setPasswordSet(c.passwordSet);
+    setPassword("");
+    setEncrypt(c.encrypt);
+    setTrustCert(c.trustServerCertificate);
+    setCompanyId(c.companyId);
+    setDefaultAccount(c.defaultAccount);
+    setSourceUser(c.sourceUser);
+  };
+
+  useEffect(() => {
+    settingsApi
+      .getPrologue()
+      .then(applySettings)
+      .catch(() => {
+        /* leave defaults; admin can still configure */
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  /** The form values as a payload; `password` included only when the admin typed one. */
+  const payload = (): PrologueUpdate => ({
+    enabled,
+    host: host.trim() || null,
+    port: Number(port) || 1433,
+    database: database.trim() || null,
+    user: user.trim() || null,
+    ...(password ? { password } : {}),
+    encrypt,
+    trustServerCertificate: trustCert,
+    companyId: companyId.trim() || "01",
+    defaultAccount: defaultAccount.trim() || "01886910800005",
+    sourceUser: sourceUser.trim() || "TANVI",
+  });
+
+  const test = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await settingsApi.testPrologue(payload());
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({ ok: false, message: (err as Error)?.message ?? "Test failed" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const save = async () => {
+    if (enabled && (!host.trim() || !database.trim() || !user.trim())) {
+      toast({
+        variant: "destructive",
+        title: "Missing values",
+        description: "Host, Database, and User are required to enable Prologue.",
+      });
+      return;
+    }
+    setSaving(true);
+    try {
+      const saved = await settingsApi.putPrologue(payload());
+      applySettings(saved);
+      toast({
+        title: "Prologue settings saved",
+        description: saved.enabled
+          ? "Prologue write-back on approval is enabled."
+          : "Prologue write-back is disabled.",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Could not save",
+        description: (err as Error)?.message,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Layout>
+      <div className="max-w-3xl space-y-6">
+        <div>
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight text-foreground">
+            <Database className="h-8 w-8 text-primary" />
+            Prologue (Fiserv) Integration
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            SQL Server connection used to stage an unposted AP transaction in Fiserv
+            Prologue when an invoice is approved. Off unless enabled and connected.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle>Connection</CardTitle>
+                <CardDescription>
+                  The app login needs EXECUTE on the two Prologue stored procedures. The
+                  password is stored encrypted and never shown again.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-3 rounded-lg border p-3 bg-muted/40">
+                  <Switch checked={enabled} onCheckedChange={setEnabled} id="pg-enabled" />
+                  <Label htmlFor="pg-enabled" className="cursor-pointer">
+                    Enable Prologue write-back on approval
+                  </Label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="pg-host">Host</Label>
+                    <Input
+                      id="pg-host"
+                      value={host}
+                      onChange={(e) => setHost(e.target.value)}
+                      placeholder="prologue-sql.bankfund.internal"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pg-port">Port</Label>
+                    <Input
+                      id="pg-port"
+                      value={port}
+                      onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ""))}
+                      inputMode="numeric"
+                      placeholder="1433"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="pg-db">Database</Label>
+                    <Input
+                      id="pg-db"
+                      value={database}
+                      onChange={(e) => setDatabase(e.target.value)}
+                      placeholder="Prologue"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pg-user">User</Label>
+                    <Input
+                      id="pg-user"
+                      value={user}
+                      onChange={(e) => setUser(e.target.value)}
+                      placeholder="ap_service"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pg-pass">Password</Label>
+                  <Input
+                    id="pg-pass"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={
+                      passwordSet ? "•••••••• (leave blank to keep current)" : "SQL Server password"
+                    }
+                    autoComplete="new-password"
+                  />
+                  {passwordSet && (
+                    <p className="text-xs text-muted-foreground">
+                      A password is stored (encrypted). Enter a new one only to change it.
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex items-center gap-3 rounded-lg border p-3">
+                    <Switch checked={encrypt} onCheckedChange={setEncrypt} id="pg-encrypt" />
+                    <Label htmlFor="pg-encrypt" className="cursor-pointer text-sm">
+                      Encrypt (TLS) — recommended
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-lg border p-3">
+                    <Switch checked={trustCert} onCheckedChange={setTrustCert} id="pg-trust" />
+                    <Label htmlFor="pg-trust" className="cursor-pointer text-sm">
+                      Trust self-signed certificate
+                    </Label>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Posting defaults</CardTitle>
+                <CardDescription>
+                  Written on each staged transaction. Confirm with BankFund before go-live.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pg-company">Company ID</Label>
+                  <Input id="pg-company" value={companyId} onChange={(e) => setCompanyId(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pg-default-acct">Default GL account</Label>
+                  <Input
+                    id="pg-default-acct"
+                    value={defaultAccount}
+                    onChange={(e) => setDefaultAccount(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pg-source-user">Source user</Label>
+                  <Input id="pg-source-user" value={sourceUser} onChange={(e) => setSourceUser(e.target.value)} />
+                </div>
+              </CardContent>
+            </Card>
+
+            {testResult && (
+              <div
+                className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${
+                  testResult.ok
+                    ? "bg-green-50 border-green-300 text-green-800"
+                    : "bg-red-50 border-red-300 text-red-800"
+                }`}
+              >
+                {testResult.ok ? (
+                  <CheckCircle2 className="h-5 w-5 shrink-0" />
+                ) : (
+                  <XCircle className="h-5 w-5 shrink-0" />
+                )}
+                <span className="break-words">{testResult.message}</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <Button variant="outline" onClick={() => void test()} disabled={testing || saving}>
+                {testing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <PlugZap className="h-4 w-4 mr-2" />
+                )}
+                Test Connection
+              </Button>
+              <Button onClick={() => void save()} disabled={saving || testing}>
+                {saving ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )}
+                Save
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Layout>
+  );
+}

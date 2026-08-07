@@ -236,6 +236,27 @@ export interface SsoConfig {
   clientId: string | null;
 }
 
+/** Prologue (Fiserv) connection settings (admin). The password is never returned
+ *  — `passwordSet` says whether one is stored. On save, send `password` only to
+ *  change it; omit/blank keeps the stored one. */
+export interface PrologueSettings {
+  enabled: boolean;
+  host: string | null;
+  port: number;
+  database: string | null;
+  user: string | null;
+  passwordSet: boolean;
+  encrypt: boolean;
+  trustServerCertificate: boolean;
+  companyId: string;
+  defaultAccount: string;
+  sourceUser: string;
+}
+
+/** PUT payload for Prologue settings — like PrologueSettings but write-only
+ *  `password` in place of the read-only `passwordSet`. */
+export type PrologueUpdate = Omit<PrologueSettings, "passwordSet"> & { password?: string };
+
 export const authApi = {
   login: (email: string, password: string) =>
     api.post<SessionUser>("/auth/login", { email, password }),
@@ -252,4 +273,11 @@ export const authApi = {
 export const settingsApi = {
   getSso: () => api.get<SsoConfig>("/settings/sso"),
   putSso: (config: SsoConfig) => api.put<SsoConfig>("/settings/sso", config),
+
+  getPrologue: () => api.get<PrologueSettings>("/settings/prologue"),
+  putPrologue: (config: PrologueUpdate) =>
+    api.put<PrologueSettings>("/settings/prologue", config),
+  /** Test the connection using the given (possibly unsaved) form values. */
+  testPrologue: (config: Partial<PrologueUpdate>) =>
+    api.post<{ ok: boolean; message: string }>("/settings/prologue/test", config),
 };

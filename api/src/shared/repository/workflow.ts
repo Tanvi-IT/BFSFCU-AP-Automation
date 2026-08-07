@@ -80,9 +80,11 @@ export async function approve(
   approverName?: string
 ): Promise<void> {
   await transaction(async (client) => {
+    // Load the on/off flag once for this approval (DB-backed config).
+    const prologueOn = await prologue.isEnabled();
     // When Prologue is on, read the extra fields it needs in the same locked
     // read, so the row cannot change between the push and the local commit.
-    const columns = prologue.isEnabled()
+    const columns = prologueOn
       ? `i.id, i.status, i.approved_at, i.submitted_by,
          i.invoice_number, i.invoice_date::text AS invoice_date,
          i.due_date::text AS due_date, i.total_amount::text AS total_amount,
@@ -113,7 +115,7 @@ export async function approve(
     // Prologue-first: stage the transaction and only then flip to approved. Any
     // failure throws, rolling back this transaction so the invoice is untouched.
     let prologueRef: prologue.PrologueResult | undefined;
-    if (prologue.isEnabled()) {
+    if (prologueOn) {
       prologueRef = await stageInPrologue(
         invoice as PrologueSourceRow,
         approverName ?? actorId
@@ -460,7 +462,7 @@ export async function approveMany(
   // stage in Prologue, then commit locally. One rejection (duplicate, unmapped
   // vendor, bad GL) must not roll back the others, so each runs in its own
   // transaction via approve(). Already-approved rows surface as skipped.
-  if (prologue.isEnabled()) {
+  if (await prologue.isEnabled()) {
     const approved: string[] = [];
     const skipped: string[] = [];
     const failed: { id: string; error: string }[] = [];
