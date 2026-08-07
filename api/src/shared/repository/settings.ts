@@ -73,9 +73,14 @@ export interface PrologueConfig {
 /** What the admin UI sees — the password is never returned, only whether one is set. */
 export type PrologueSettings = Omit<PrologueConfig, 'password'> & { passwordSet: boolean };
 
-/** Update payload. `password` replaces the stored one only when non-empty;
- *  null/omitted keeps the existing password. */
-export type PrologueUpdate = Omit<PrologueConfig, 'password'> & { password?: string | null };
+/** Update payload — connection fields only. The posting defaults (company id,
+ *  default GL account, source user) are handled in the Prologue stored procedure,
+ *  so the app keeps their DB-default values and never updates them here.
+ *  `password` replaces the stored one only when non-empty; null/omitted keeps it. */
+export type PrologueUpdate = Pick<
+  PrologueConfig,
+  'enabled' | 'host' | 'port' | 'database' | 'user' | 'encrypt' | 'trustServerCertificate'
+> & { password?: string | null };
 
 interface PrologueRow {
   prologue_enabled: boolean;
@@ -151,10 +156,7 @@ export async function updatePrologueSettings(input: PrologueUpdate): Promise<Pro
         prologue_user              = $5,
         prologue_password          = CASE WHEN $6::boolean THEN $7 ELSE prologue_password END,
         prologue_encrypt           = $8,
-        prologue_trust_server_cert = $9,
-        prologue_company_id        = $10,
-        prologue_default_account   = $11,
-        prologue_source_user       = $12
+        prologue_trust_server_cert = $9
       WHERE id = true
       RETURNING ${PROLOGUE_COLUMNS}`,
     [
@@ -167,9 +169,6 @@ export async function updatePrologueSettings(input: PrologueUpdate): Promise<Pro
       encrypted,
       input.encrypt,
       input.trustServerCertificate,
-      input.companyId,
-      input.defaultAccount,
-      input.sourceUser,
     ]
   );
   return toSettings(toPrologueConfig(row));

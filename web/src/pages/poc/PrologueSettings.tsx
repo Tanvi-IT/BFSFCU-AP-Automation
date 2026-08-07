@@ -37,9 +37,6 @@ export default function PrologueSettings() {
   const [passwordSet, setPasswordSet] = useState(false);
   const [encrypt, setEncrypt] = useState(true);
   const [trustCert, setTrustCert] = useState(false);
-  const [companyId, setCompanyId] = useState("01");
-  const [defaultAccount, setDefaultAccount] = useState("01886910800005");
-  const [sourceUser, setSourceUser] = useState("TANVI");
 
   const applySettings = (c: Settings) => {
     setEnabled(c.enabled);
@@ -51,9 +48,6 @@ export default function PrologueSettings() {
     setPassword("");
     setEncrypt(c.encrypt);
     setTrustCert(c.trustServerCertificate);
-    setCompanyId(c.companyId);
-    setDefaultAccount(c.defaultAccount);
-    setSourceUser(c.sourceUser);
   };
 
   useEffect(() => {
@@ -76,9 +70,6 @@ export default function PrologueSettings() {
     ...(password ? { password } : {}),
     encrypt,
     trustServerCertificate: trustCert,
-    companyId: companyId.trim() || "01",
-    defaultAccount: defaultAccount.trim() || "01886910800005",
-    sourceUser: sourceUser.trim() || "TANVI",
   });
 
   const test = async () => {
@@ -236,33 +227,6 @@ export default function PrologueSettings() {
                       Trust self-signed certificate
                     </Label>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Posting defaults</CardTitle>
-                <CardDescription>
-                  Written on each staged transaction. Confirm with BankFund before go-live.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="pg-company">Company ID</Label>
-                  <Input id="pg-company" value={companyId} onChange={(e) => setCompanyId(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pg-default-acct">Default GL account</Label>
-                  <Input
-                    id="pg-default-acct"
-                    value={defaultAccount}
-                    onChange={(e) => setDefaultAccount(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pg-source-user">Source user</Label>
-                  <Input id="pg-source-user" value={sourceUser} onChange={(e) => setSourceUser(e.target.value)} />
                 </div>
               </CardContent>
             </Card>

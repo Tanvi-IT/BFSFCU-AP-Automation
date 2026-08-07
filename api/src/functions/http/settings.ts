@@ -87,9 +87,6 @@ app.http('settings-prologue', {
     const port = Number.isFinite(portRaw) && portRaw > 0 ? Math.trunc(portRaw) : 1433;
     const encrypt = body['encrypt'] !== false; // default TLS on
     const trustServerCertificate = body['trustServerCertificate'] === true;
-    const companyId = strField(body, 'companyId') ?? '01';
-    const defaultAccount = strField(body, 'defaultAccount') ?? '01886910800005';
-    const sourceUser = strField(body, 'sourceUser') ?? 'TANVI';
     // Only replace the password when a non-empty value is sent.
     const password =
       typeof body['password'] === 'string' && (body['password'] as string).length > 0
@@ -100,6 +97,8 @@ app.http('settings-prologue', {
       throw AppError.validation('Host, Database, and User are required to enable Prologue.');
     }
 
+    // Posting defaults (company id / default GL account / source user) are owned
+    // by the Prologue stored procedure — the app keeps their DB defaults.
     const updated = await updatePrologueSettings({
       enabled,
       host,
@@ -109,9 +108,6 @@ app.http('settings-prologue', {
       password,
       encrypt,
       trustServerCertificate,
-      companyId,
-      defaultAccount,
-      sourceUser,
     });
     log.info('Prologue settings updated', { enabled: updated.enabled });
     return ok(updated);
