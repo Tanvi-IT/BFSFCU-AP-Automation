@@ -12,17 +12,17 @@ import { Inbox, Loader2, Search, RefreshCcw } from "lucide-react";
 
 /**
  * Inbox Monitor — visibility for invoices arriving from the email / Power
- * Automate inbox.
+ * Automate pipeline (tagged `email_ingest` by the API, keyed off the X-Api-Key
+ * auth channel; `email` is a legacy value).
  *
  * The problem this solves: the shared status chip collapses queued / processing
- * / validated / submitted into one "In Queue" label, so a machine-ingested
- * invoice that NEVER processed (corrupt file, never picked up) looks identical
- * to a healthy one awaiting review. This page shows the real health of each
- * ingested invoice — Processing, Stuck, Extraction failed, In Review, done —
- * and surfaces the processing error, so a bad delivery is obvious at a glance.
+ * / validated / submitted into one "In Queue" label, so a pipeline invoice that
+ * NEVER processed (corrupt file, never picked up) looks identical to a healthy
+ * one awaiting review. This page shows the real health of each pipeline invoice
+ * — Processing, Stuck, Extraction failed, In Review, done — so a bad delivery is
+ * obvious at a glance. Manual (browser) uploads live on the Upload page instead.
  *
- * Read-only: it reuses `GET /invoices` (which returns every column, including
- * `source` and `processing_error`) and filters client-side. No API change.
+ * Read-only: reuses `GET /invoices` and filters to inbox-sourced rows client-side.
  */
 
 /**
@@ -42,19 +42,9 @@ const TONE_CLASS: Record<Tone, string> = {
   gray: "bg-gray-100 text-gray-600 border border-gray-300",
 };
 
-type SourceFilter = "inbox" | "api" | "all";
-
+/** Inbox = the email / Power Automate pipeline. `email` is a legacy tag value. */
 function isInboxSource(source: string | undefined): boolean {
   return source === "email_ingest" || source === "email";
-}
-function isApiSource(source: string | undefined): boolean {
-  return source === "api_ingest" || source === "api";
-}
-function sourceLabel(source: string | undefined): string {
-  if (isInboxSource(source)) return "Inbox";
-  if (isApiSource(source)) return "API";
-  if (source === "manual_upload") return "Manual";
-  return source ?? "—";
 }
 
 function ageMinutes(createdAt: string | undefined): number {
@@ -89,7 +79,6 @@ interface Health {
   tone: Tone;
   /** true for states that need attention (stuck / failed / exception). */
   attention: boolean;
-  detail?: string;
 }
 
 function health(inv: Invoice): Health {
@@ -100,13 +89,7 @@ function health(inv: Invoice): Health {
     const age = ageMinutes(inv.created_at);
     const el = elapsedLabel(age);
     if (age >= STUCK_AFTER_MIN) {
-      return {
-        kind: "stuck",
-        label: `Stuck (${el})`,
-        tone: "red",
-        attention: true,
-        detail: `No result after ${el} — normal processing takes ~15s`,
-      };
+      return { kind: "stuck", label: `Stuck (${el})`, tone: "red", attention: true };
     }
     return { kind: "processing", label: `Processing… (${el})`, tone: "blue", attention: false };
   }
@@ -122,13 +105,7 @@ function health(inv: Invoice): Health {
       return { kind: "review", label: "In Review · High", tone: "blue", attention: false };
     case "validated":
       return failed
-        ? {
-            kind: "failed",
-            label: "Extraction failed",
-            tone: "red",
-            attention: true,
-            detail: inv.processing_error || "No data could be extracted from the file",
-          }
+        ? { kind: "failed", label: "Extraction failed", tone: "red", attention: true }
         : { kind: "review", label: "In Review · Low", tone: "amber", attention: false };
     default:
       return { kind: "other", label: inv.status, tone: "gray", attention: false };
@@ -148,11 +125,6 @@ export default function InboxMonitor() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
-  // Default to "all": the flow may tag inbox invoices as `manual_upload` (a
-  // single pdf_base64 POST is indistinguishable from a browser upload by
-  // source), so filtering to `email_ingest` up front can hide the very rows
-  // being investigated. The Source column shows each row's real tag.
-  const [source, setSource] = useState<SourceFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -191,20 +163,18 @@ export default function InboxMonitor() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const sourceFiltered = useMemo(
-    () =>
-      invoices.filter((inv) => {
-        if (source === "inbox") return isInboxSource(inv.source);
-        if (source === "api") return isApiSource(inv.source);
-        return true;
-      }),
-    [invoices, source]
+  // This page is specifically the email / Power Automate pipeline, so it only
+  // shows inbox-sourced invoices (the API tags them email_ingest from the
+  // X-Api-Key auth channel). Manual browser uploads stay on the Upload page.
+  const inboxInvoices = useMemo(
+    () => invoices.filter((inv) => isInboxSource(inv.source)),
+    [invoices]
   );
 
   const filtered = useMemo(() => {
-    if (!searchTerm.trim()) return sourceFiltered;
+    if (!searchTerm.trim()) return inboxInvoices;
     const term = searchTerm.toLowerCase();
-    return sourceFiltered.filter(
+    return inboxInvoices.filter(
       (inv) =>
         inv.vendor_name?.toLowerCase().includes(term) ||
         inv.invoice_number?.toLowerCase().includes(term) ||
@@ -212,13 +182,13 @@ export default function InboxMonitor() {
         inv.sender_email?.toLowerCase().includes(term) ||
         String(inv.total_amount ?? "").includes(term)
     );
-  }, [sourceFiltered, searchTerm]);
+  }, [inboxInvoices, searchTerm]);
 
-  // Health summary across the (source-filtered) set, so the counts describe the
-  // inbox regardless of the text search.
+  // Health summary across all inbox invoices, so the counts describe the
+  // pipeline regardless of the text search.
   const summary = useMemo(() => {
     const s = { processing: 0, stuck: 0, failed: 0, review: 0, done: 0 };
-    for (const inv of sourceFiltered) {
+    for (const inv of inboxInvoices) {
       const k = health(inv).kind;
       if (k === "processing") s.processing += 1;
       else if (k === "stuck") s.stuck += 1;
@@ -227,17 +197,7 @@ export default function InboxMonitor() {
       else s.done += 1;
     }
     return s;
-  }, [sourceFiltered]);
-
-  const SourceButton = ({ value, label }: { value: SourceFilter; label: string }) => (
-    <Button
-      variant={source === value ? "default" : "outline"}
-      size="sm"
-      onClick={() => setSource(value)}
-    >
-      {label}
-    </Button>
-  );
+  }, [inboxInvoices]);
 
   const SummaryChip = ({ n, label, tone }: { n: number; label: string; tone: Tone }) => (
     <div className={`rounded-lg px-3 py-2 text-sm ${TONE_CLASS[tone]}`}>
@@ -255,9 +215,9 @@ export default function InboxMonitor() {
               Inbox Monitor
             </h1>
             <p className="text-muted-foreground mt-1">
-              Ingested invoices and their real processing status — spot stuck or
-              failed deliveries at a glance. Filter by source below. Auto-refreshes
-              every 10s.
+              Invoices from the email / Power Automate pipeline and their real
+              processing status — spot stuck or failed deliveries at a glance.
+              Auto-refreshes every 10s.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -288,30 +248,20 @@ export default function InboxMonitor() {
           <SummaryChip n={summary.done} label="Approved / Declined" tone="green" />
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-2">
-            <SourceButton value="inbox" label="Inbox" />
-            <SourceButton value="api" label="API" />
-            <SourceButton value="all" label="All sources" />
-          </div>
-          <div className="relative max-w-xs flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search vendor, invoice #, sender, file…"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+        {/* Search */}
+        <div className="relative max-w-xs">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search vendor, invoice #, sender, file…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>
-              {source === "inbox" ? "Inbox" : source === "api" ? "API" : "All"} invoices (
-              {filtered.length})
-            </CardTitle>
+            <CardTitle>Inbox invoices ({filtered.length})</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             {!hasLoaded ? (
@@ -322,11 +272,7 @@ export default function InboxMonitor() {
               <div className="py-12 text-center text-muted-foreground">
                 <Inbox className="mx-auto h-12 w-12 text-muted-foreground/50" />
                 <p className="mt-4">
-                  {searchTerm
-                    ? "No matching invoices."
-                    : source === "all"
-                    ? "No invoices yet."
-                    : `No invoices tagged "${source}". The flow may tag them differently — try All sources.`}
+                  {searchTerm ? "No matching invoices." : "No inbox invoices yet."}
                 </p>
               </div>
             ) : (
@@ -334,12 +280,10 @@ export default function InboxMonitor() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Received</TableHead>
-                    <TableHead>Source</TableHead>
                     <TableHead>Vendor / File</TableHead>
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Health</TableHead>
-                    <TableHead>Detail</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -366,11 +310,6 @@ export default function InboxMonitor() {
                                 })
                               : "—"}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
-                            {sourceLabel(inv.source)}
-                          </span>
                         </TableCell>
                         <TableCell className="font-medium">
                           <div>
@@ -401,11 +340,6 @@ export default function InboxMonitor() {
                               <Loader2 className="h-3 w-3 animate-spin" />
                             )}
                             {h.label}
-                          </span>
-                        </TableCell>
-                        <TableCell className="max-w-[280px]">
-                          <span className="text-xs text-muted-foreground line-clamp-2">
-                            {h.detail || "—"}
                           </span>
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>

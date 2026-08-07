@@ -111,6 +111,17 @@ app.http('invoices', {
     POST: {
       roles: Roles.reviewer,
       handler: async ({ req, user, log }) => {
+        // How the caller authenticated determines the ingestion channel: the
+        // Power Automate email pipeline presents an X-Api-Key; a person uploading
+        // in the browser uses the session cookie. Tag the source accordingly.
+        // Without this, a single `pdf_base64` POST from the flow was
+        // indistinguishable from a manual browser upload (both `manual_upload`),
+        // so inbox invoices leaked into the Upload page's Recent Uploads and
+        // couldn't be isolated in the Inbox Monitor.
+        const ingestSource: 'manual_upload' | 'email_ingest' = req.headers.get('x-api-key')
+          ? 'email_ingest'
+          : 'manual_upload';
+
         // Store one document: blob → queued invoice → pipeline job → audit.
         // Duplicates are intentionally allowed; the worker's duplicate check
         // supersedes an earlier pending copy or routes to Exceptions.
@@ -156,7 +167,7 @@ app.http('invoices', {
             } else if (!looksLikePdf(bytes)) {
               discarded.push({ filename, reason: 'not a PDF' });
             } else {
-              const id = await persistUpload(bytes, filename, 'application/pdf', 'email_ingest');
+              const id = await persistUpload(bytes, filename, 'application/pdf', ingestSource);
               created.push({ invoiceId: id, filename });
             }
           }
@@ -243,7 +254,7 @@ app.http('invoices', {
             );
           }
           const filename = body.filename || body.fileName || 'invoice.pdf';
-          const id = await persistUpload(bytes, filename, 'application/pdf', 'manual_upload');
+          const id = await persistUpload(bytes, filename, 'application/pdf', ingestSource);
           log.info('Invoice queued', { invoiceId: id, bytes: bytes.length });
           return accepted({ invoiceId: id, status: 'queued' });
         }
@@ -287,7 +298,7 @@ app.http('invoices', {
         if (bytes.length > MAX_UPLOAD_BYTES) {
           throw AppError.validation('File exceeds the 20 MB limit');
         }
-        const id = await persistUpload(bytes, filename, contentType, 'manual_upload');
+        const id = await persistUpload(bytes, filename, contentType, ingestSource);
         log.info('Invoice queued', { invoiceId: id, bytes: bytes.length });
         return accepted({ invoiceId: id, status: 'queued' });
       },
