@@ -89,15 +89,15 @@ app.storageQueue('process-invoice', {
 
       // 4. Vendor: exact identifiers → trigram similarity → AI as last resort.
       //    Matching only — vendors are created solely by an admin's spreadsheet
-      //    import, so an unknown payee ends up in Exceptions rather than
-      //    becoming a new vendor record.
+      //    import, so an unknown payee lands in Low Confidence for review rather
+      //    than becoming a new vendor record.
       const vendor = await resolveVendor({
         name: vendorName,
         taxId: vendorTaxId,
         bankAccount: null,
       });
       if (!vendor.id) {
-        invoiceLog.warn('Vendor not on the master list; routing to Exceptions', {
+        invoiceLog.warn('Vendor not on the master list; routing to Low Confidence', {
           extractedName: vendorName,
         });
       }
