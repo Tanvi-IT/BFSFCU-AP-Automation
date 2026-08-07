@@ -253,12 +253,12 @@ export interface PrologueSettings {
   sourceUser: string;
 }
 
-/** PUT payload for Prologue settings — the connection fields only (posting
- *  defaults like company/GL account/source user live in the stored procedure).
+/** PUT payload for Prologue settings — the connection basics only. TLS options
+ *  and posting defaults are fixed server-side / owned by the stored procedure.
  *  `password` is write-only; omit/blank to keep the stored one. */
 export type PrologueUpdate = Pick<
   PrologueSettings,
-  "enabled" | "host" | "port" | "database" | "user" | "encrypt" | "trustServerCertificate"
+  "enabled" | "host" | "port" | "database" | "user"
 > & { password?: string };
 
 export const authApi = {

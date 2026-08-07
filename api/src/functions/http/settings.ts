@@ -85,8 +85,6 @@ app.http('settings-prologue', {
     const user = strField(body, 'user');
     const portRaw = Number(body['port']);
     const port = Number.isFinite(portRaw) && portRaw > 0 ? Math.trunc(portRaw) : 1433;
-    const encrypt = body['encrypt'] !== false; // default TLS on
-    const trustServerCertificate = body['trustServerCertificate'] === true;
     // Only replace the password when a non-empty value is sent.
     const password =
       typeof body['password'] === 'string' && (body['password'] as string).length > 0
@@ -97,8 +95,10 @@ app.http('settings-prologue', {
       throw AppError.validation('Host, Database, and User are required to enable Prologue.');
     }
 
-    // Posting defaults (company id / default GL account / source user) are owned
-    // by the Prologue stored procedure — the app keeps their DB defaults.
+    // TLS is fixed on with a trusted server cert — the app connects to SQL Server
+    // over a private VNet, so there's no toggle to expose. Posting defaults
+    // (company id / default GL account / source user) are owned by the stored
+    // procedure — the app keeps their DB defaults.
     const updated = await updatePrologueSettings({
       enabled,
       host,
@@ -106,8 +106,8 @@ app.http('settings-prologue', {
       database,
       user,
       password,
-      encrypt,
-      trustServerCertificate,
+      encrypt: true,
+      trustServerCertificate: true,
     });
     log.info('Prologue settings updated', { enabled: updated.enabled });
     return ok(updated);
@@ -131,9 +131,9 @@ app.http('settings-prologue-test', {
     if (user) override.user = user;
     const portRaw = Number(body['port']);
     if (Number.isFinite(portRaw) && portRaw > 0) override.port = Math.trunc(portRaw);
-    if (typeof body['encrypt'] === 'boolean') override.encrypt = body['encrypt'];
-    if (typeof body['trustServerCertificate'] === 'boolean')
-      override.trustServerCertificate = body['trustServerCertificate'];
+    // TLS fixed on with a trusted server cert (private VNet) — matches a saved connection.
+    override.encrypt = true;
+    override.trustServerCertificate = true;
     if (typeof body['password'] === 'string' && (body['password'] as string).length > 0)
       override.password = body['password'] as string;
 

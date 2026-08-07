@@ -35,8 +35,6 @@ export default function PrologueSettings() {
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
   const [passwordSet, setPasswordSet] = useState(false);
-  const [encrypt, setEncrypt] = useState(true);
-  const [trustCert, setTrustCert] = useState(false);
 
   const applySettings = (c: Settings) => {
     setEnabled(c.enabled);
@@ -46,8 +44,6 @@ export default function PrologueSettings() {
     setUser(c.user ?? "");
     setPasswordSet(c.passwordSet);
     setPassword("");
-    setEncrypt(c.encrypt);
-    setTrustCert(c.trustServerCertificate);
   };
 
   useEffect(() => {
@@ -68,8 +64,6 @@ export default function PrologueSettings() {
     database: database.trim() || null,
     user: user.trim() || null,
     ...(password ? { password } : {}),
-    encrypt,
-    trustServerCertificate: trustCert,
   });
 
   const test = async () => {
@@ -212,21 +206,6 @@ export default function PrologueSettings() {
                       A password is stored (encrypted). Enter a new one only to change it.
                     </p>
                   )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="flex items-center gap-3 rounded-lg border p-3">
-                    <Switch checked={encrypt} onCheckedChange={setEncrypt} id="pg-encrypt" />
-                    <Label htmlFor="pg-encrypt" className="cursor-pointer text-sm">
-                      Encrypt (TLS) — recommended
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-3 rounded-lg border p-3">
-                    <Switch checked={trustCert} onCheckedChange={setTrustCert} id="pg-trust" />
-                    <Label htmlFor="pg-trust" className="cursor-pointer text-sm">
-                      Trust self-signed certificate
-                    </Label>
-                  </div>
                 </div>
               </CardContent>
             </Card>
