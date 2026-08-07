@@ -226,6 +226,22 @@ app.http('invoices', {
           if (bytes.length > MAX_UPLOAD_BYTES) {
             throw AppError.validation('File exceeds the 20 MB limit');
           }
+          // The decoded content must actually be a PDF. Unlike the multipart path
+          // (which trusts the browser's content type) and the attachments batch
+          // (which silently discards non-PDFs), this single-document path used to
+          // store whatever it decoded — so a machine caller sending a malformed
+          // `pdf_base64` (e.g. an attachment reference/metadata object, or already
+          // decoded content) had a broken ~few-hundred-byte "invoice" created that
+          // could never extract. Reject it here with a clear, actionable error so
+          // the caller (a Power Automate flow) sees exactly what is wrong instead
+          // of silently producing an empty, stuck invoice.
+          if (!looksLikePdf(bytes)) {
+            throw AppError.validation(
+              `Decoded "pdf_base64" is not a valid PDF (no %PDF header in ${bytes.length} bytes). ` +
+                'Send base64 of the PDF file itself — its raw contentBytes — not a reference, ' +
+                'metadata object, or already-decoded content.'
+            );
+          }
           const filename = body.filename || body.fileName || 'invoice.pdf';
           const id = await persistUpload(bytes, filename, 'application/pdf', 'manual_upload');
           log.info('Invoice queued', { invoiceId: id, bytes: bytes.length });
