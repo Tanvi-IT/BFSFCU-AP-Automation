@@ -43,10 +43,9 @@ function connectionSignature(c: PrologueConfig): string {
 }
 
 function poolConfig(c: PrologueConfig): sql.config {
-  return {
+  const cfg: sql.config = {
     server: c.host as string,
     port: c.port,
-    database: c.database as string,
     user: c.user as string,
     password: c.password,
     options: {
@@ -57,6 +56,10 @@ function poolConfig(c: PrologueConfig): sql.config {
     connectionTimeout: 10_000,
     requestTimeout: 20_000,
   };
+  // Omit `database` when unset so a connection test can verify the server + login
+  // against the login's default database. The real write path always sets it.
+  if (c.database) cfg.database = c.database;
+  return cfg;
 }
 
 /**
@@ -113,8 +116,10 @@ export async function testConnection(
 ): Promise<{ ok: boolean; message: string }> {
   const stored = await getPrologueConfig();
   const c: PrologueConfig = { ...stored, ...override };
-  if (!c.host || !c.database || !c.user) {
-    return { ok: false, message: 'Host, database, and user are all required.' };
+  // Database is optional for a test — without it we connect to the login's
+  // default database and run SELECT 1, which still proves reachability + auth.
+  if (!c.host || !c.user) {
+    return { ok: false, message: 'Host and user are required to test.' };
   }
   if (!c.password) {
     return {

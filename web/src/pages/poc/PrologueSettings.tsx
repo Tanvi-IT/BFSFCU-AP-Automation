@@ -176,6 +176,9 @@ export default function PrologueSettings() {
                       onChange={(e) => setDatabase(e.target.value)}
                       placeholder="Prologue"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Optional to test; required to save &amp; enable.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="pg-user">User</Label>
