@@ -290,13 +290,18 @@ export default function InboxMonitor() {
                 <TableBody>
                   {filtered.map((inv) => {
                     const h = health(inv);
+                    // No "View" (or row navigation) until the worker has finished —
+                    // a queued/processing invoice has no review page yet, so it would
+                    // only route to the generic detail. The Health column already
+                    // shows its live "Processing…/Stuck" state.
+                    const ready = !isInFlight(inv.status);
                     return (
                       <TableRow
                         key={inv.id}
-                        className={`cursor-pointer hover:bg-muted/50 ${
+                        className={`${ready ? "cursor-pointer hover:bg-muted/50" : ""} ${
                           h.attention ? "bg-red-50/40" : ""
                         }`}
-                        onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
+                        onClick={ready ? () => navigate(invoiceRoute(inv.status, inv.id)) : undefined}
                       >
                         <TableCell className="whitespace-nowrap">
                           <div className="text-sm">{relativeAge(inv.created_at)}</div>
@@ -343,13 +348,17 @@ export default function InboxMonitor() {
                           </span>
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
-                          >
-                            View
-                          </Button>
+                          {ready ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
+                            >
+                              View
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">Processing…</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
