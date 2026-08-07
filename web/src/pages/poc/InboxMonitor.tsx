@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { invoicesApi, isInFlight, type Invoice } from "@/services/invoices";
 import { displayInvoiceNumber } from "@/lib/utils";
+import { invoiceRoute } from "@/lib/invoiceRoute";
 import { Inbox, Loader2, Search, RefreshCcw } from "lucide-react";
 
 /**
@@ -351,7 +352,7 @@ export default function InboxMonitor() {
                         className={`cursor-pointer hover:bg-muted/50 ${
                           h.attention ? "bg-red-50/40" : ""
                         }`}
-                        onClick={() => navigate(`/invoices/${inv.id}`)}
+                        onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
                       >
                         <TableCell className="whitespace-nowrap">
                           <div className="text-sm">{relativeAge(inv.created_at)}</div>
@@ -411,7 +412,7 @@ export default function InboxMonitor() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => navigate(`/invoices/${inv.id}`)}
+                            onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
                           >
                             View
                           </Button>
