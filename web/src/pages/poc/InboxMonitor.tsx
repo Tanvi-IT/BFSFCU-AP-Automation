@@ -129,7 +129,11 @@ export default function InboxMonitor() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
-  const [source, setSource] = useState<SourceFilter>("inbox");
+  // Default to "all": the flow may tag inbox invoices as `manual_upload` (a
+  // single pdf_base64 POST is indistinguishable from a browser upload by
+  // source), so filtering to `email_ingest` up front can hide the very rows
+  // being investigated. The Source column shows each row's real tag.
+  const [source, setSource] = useState<SourceFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
   // Bump on every poll so relative ages / stuck detection re-render live.
   const [, setTick] = useState(0);
@@ -219,8 +223,9 @@ export default function InboxMonitor() {
               Inbox Monitor
             </h1>
             <p className="text-muted-foreground mt-1">
-              Invoices received from the email / Power Automate inbox and their real
-              processing status. Auto-refreshes every 10s.
+              Ingested invoices and their real processing status — spot stuck or
+              failed deliveries at a glance. Filter by source below. Auto-refreshes
+              every 10s.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => void fetchInvoices()} className="gap-2">
@@ -272,7 +277,11 @@ export default function InboxMonitor() {
               <div className="py-12 text-center text-muted-foreground">
                 <Inbox className="mx-auto h-12 w-12 text-muted-foreground/50" />
                 <p className="mt-4">
-                  {searchTerm ? "No matching invoices." : "No invoices from this source yet."}
+                  {searchTerm
+                    ? "No matching invoices."
+                    : source === "all"
+                    ? "No invoices yet."
+                    : `No invoices tagged "${source}". The flow may tag them differently — try All sources.`}
                 </p>
               </div>
             ) : (
