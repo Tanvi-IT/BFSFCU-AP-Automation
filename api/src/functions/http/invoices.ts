@@ -273,16 +273,6 @@ app.http('invoices', {
           // the caller (a Power Automate flow) sees exactly what is wrong instead
           // of silently producing an empty, stuck invoice.
           if (!looksLikePdf(bytes)) {
-            // TEMP DIAGNOSTIC (remove after capture): show exactly what the caller
-            // actually sent, so we can see whether the real PDF bytes ever arrive.
-            log.warn('pdf_base64 rejected — raw payload diagnostic', {
-              rawLen: raw.length,
-              rawHead: raw.slice(0, 200),
-              rawTail: raw.slice(-48),
-              decodedLen: bytes.length,
-              decodedHeadHex: bytes.subarray(0, 96).toString('hex'),
-              decodedHeadText: bytes.subarray(0, 96).toString('latin1'),
-            });
             throw AppError.validation(
               `Decoded "pdf_base64" is not a valid PDF (no %PDF header in ${bytes.length} bytes). ` +
                 'Send base64 of the PDF file itself — its raw contentBytes — not a reference, ' +
