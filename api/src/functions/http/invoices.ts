@@ -45,6 +45,34 @@ function looksLikePdf(bytes: Buffer): boolean {
   return bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'));
 }
 
+/**
+ * Decode a base64 (or data-URI) string to bytes, tolerating ONE extra layer of
+ * base64 wrapping. Some machine callers double-encode: a Power Automate custom
+ * connector whose `pdf_base64` parameter is typed `format: byte` base64-encodes
+ * a value that is already a base64 string, so a single decode yields base64
+ * TEXT rather than the file. When the first decode is not a PDF but is itself
+ * valid base64 of a PDF, we decode once more and return that.
+ *
+ * This looks at the payload as a whole rather than trusting the first layer, but
+ * it is NOT a blanket "accept anything": a genuinely non-PDF payload (e.g. a
+ * few-hundred-byte inline-image / TNEF stub) is a PDF at neither layer, so the
+ * caller's looksLikePdf check still rejects it and no ghost invoice is created.
+ */
+function decodePdfBase64(raw: string): Buffer {
+  const b64 = raw.replace(/^data:[^;]*;base64,/, '').replace(/\s/g, '');
+  const once = Buffer.from(b64, 'base64');
+  if (looksLikePdf(once)) return once;
+
+  // Peel a second layer only when what we decoded is itself base64 text (the
+  // double-encoded case). Real binary bytes fail this test and are left alone.
+  const inner = once.toString('latin1').replace(/\s/g, '');
+  if (inner.length >= 8 && /^[A-Za-z0-9+/]+={0,2}$/.test(inner)) {
+    const twice = Buffer.from(inner, 'base64');
+    if (looksLikePdf(twice)) return twice;
+  }
+  return once;
+}
+
 // --------------------------------------------------------------------------
 // GET  /api/invoices    list
 // POST /api/invoices    upload
@@ -214,9 +242,8 @@ app.http('invoices', {
           if (Array.isArray(body.attachments)) {
             const items = body.attachments.map((a, i) => {
               const raw = a.contentBytes ?? a.ContentBytes ?? a.pdf_base64 ?? '';
-              const b64 = raw.replace(/^data:[^;]*;base64,/, '').replace(/\s/g, '');
               return {
-                bytes: Buffer.from(b64, 'base64'),
+                bytes: decodePdfBase64(raw),
                 filename:
                   a.name || a.Name || a.filename || a.fileName || `attachment-${i + 1}.pdf`,
               };
@@ -231,8 +258,7 @@ app.http('invoices', {
               'Missing "pdf_base64" or "attachments" in the request body'
             );
           }
-          const b64 = raw.replace(/^data:[^;]*;base64,/, '').replace(/\s/g, '');
-          const bytes = Buffer.from(b64, 'base64');
+          const bytes = decodePdfBase64(raw);
           if (bytes.length === 0) throw AppError.validation('The uploaded file is empty');
           if (bytes.length > MAX_UPLOAD_BYTES) {
             throw AppError.validation('File exceeds the 20 MB limit');
