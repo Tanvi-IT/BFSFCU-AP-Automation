@@ -38,6 +38,7 @@ import { displayInvoiceNumber, sanitizeGlAccount } from "@/lib/utils";
 import { InvoiceNotes } from "@/components/InvoiceNotes";
 import { InvoiceAuditTrail } from "@/components/poc/InvoiceAuditTrail";
 import { SupplementalAttachment } from "@/components/SupplementalAttachment";
+import { AchRecordHint } from "@/components/AchRecordHint";
 
 
 interface InvoiceDetail {
@@ -112,11 +113,30 @@ export default function HighConfidenceDetail() {
   const [vendorSearchResults, setVendorSearchResults] = useState<{id: string, name: string}[]>([]);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [showVendorDropdown, setShowVendorDropdown] = useState(false);
+  // The matched/linked vendor's ACH on record — used to auto-fill blank invoice
+  // ACH fields and to show the "same as / differs from vendor record" hint.
+  const [vendorAch, setVendorAch] = useState<{ routing: string | null; account: string | null } | null>(null);
   const searchVendors = async (query: string) => {
     if (!query || query.length < 2) { setVendorSearchResults([]); setShowVendorDropdown(false); return; }
     const data = await vendorsApi.list({ search: query }).catch(() => []);
     if (data && data.length > 0) { setVendorSearchResults(data.slice(0, 8).map(v => ({ id: v.id, name: v.name }))); setShowVendorDropdown(true); }
     else { setVendorSearchResults([]); setShowVendorDropdown(false); }
+  };
+
+  /**
+   * Load a vendor's on-record ACH details. When `fillBlanks` is set (used on a
+   * manual re-link), any *blank* ACH edit field is filled from the record — an
+   * extracted value is never overwritten; a difference is offered via the hint.
+   */
+  const loadVendorAch = async (vendorId: string, fillBlanks = false) => {
+    const vendor = await vendorsApi.get(vendorId).catch(() => null);
+    const routing = vendor ? ((vendor.ach_routing_number as string | null) ?? null) : null;
+    const account = vendor ? ((vendor.ach_account_number as string | null) ?? null) : null;
+    setVendorAch({ routing, account });
+    if (fillBlanks) {
+      setEditAchRouting((prev) => (prev.trim() ? prev : routing ?? ""));
+      setEditAchAccount((prev) => (prev.trim() ? prev : account ?? ""));
+    }
   };
   
   // Dialogs
@@ -180,6 +200,18 @@ export default function HighConfidenceDetail() {
       setEditAchAccount(currentInvoice.ach_account_number || "");
     }
   }, [currentInvoice?.id]);
+
+  // Pull the matched vendor's ACH on record whenever the linked vendor changes,
+  // so the "same as / differs from vendor record" hint has something to compare.
+  useEffect(() => {
+    const vendorId = currentInvoice?.vendor?.id;
+    if (!vendorId) {
+      setVendorAch(null);
+      return;
+    }
+    loadVendorAch(vendorId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentInvoice?.vendor?.id]);
 
 
   const fetchHighConfidenceInvoices = async () => {
@@ -571,8 +603,10 @@ export default function HighConfidenceDetail() {
                     setEditAmount(String(currentInvoice.total_amount));
                     setEditInvoiceNumber(currentInvoice.invoice_number);
                     setEditDate(currentInvoice.invoice_date || "");
-                    setEditAchRouting(currentInvoice.ach_routing_number || "");
-                    setEditAchAccount(currentInvoice.ach_account_number || "");
+                    // Fill blank ACH fields from the matched vendor's record; an
+                    // extracted value is left as-is (a difference shows in the hint).
+                    setEditAchRouting(currentInvoice.ach_routing_number || vendorAch?.routing || "");
+                    setEditAchAccount(currentInvoice.ach_account_number || vendorAch?.account || "");
                     setIsFieldEditing(true);
                   }} className="gap-1">
                     <Pencil className="h-3.5 w-3.5" />
@@ -637,6 +671,8 @@ export default function HighConfidenceDetail() {
               setEditVendor(v.name);
               setSelectedVendorId(v.id);
               setShowVendorDropdown(false);
+              // Fill blank ACH from the newly linked vendor's record.
+              void loadVendorAch(v.id, true);
             }}>
             {v.name}
           </button>
@@ -710,6 +746,11 @@ export default function HighConfidenceDetail() {
                     ) : (
                       <p className="font-medium text-sm font-mono">{currentInvoice?.ach_routing_number || '—'}</p>
                     )}
+                    <AchRecordHint
+                      value={isFieldEditing ? editAchRouting : currentInvoice?.ach_routing_number}
+                      record={vendorAch?.routing}
+                      onUseRecord={isFieldEditing ? setEditAchRouting : undefined}
+                    />
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
@@ -751,6 +792,11 @@ export default function HighConfidenceDetail() {
                     ) : (
                       <p className="font-medium text-sm font-mono">{currentInvoice?.ach_account_number || '—'}</p>
                     )}
+                    <AchRecordHint
+                      value={isFieldEditing ? editAchAccount : currentInvoice?.ach_account_number}
+                      record={vendorAch?.account}
+                      onUseRecord={isFieldEditing ? setEditAchAccount : undefined}
+                    />
                   </div>
                 </div>
               </div>

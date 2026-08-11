@@ -46,6 +46,7 @@ import { InvoiceNotes } from "@/components/InvoiceNotes";
 import { DuplicateBadge, DuplicateType } from "@/components/poc/DuplicateBadge";
 import { DuplicateWarningCard } from "@/components/poc/DuplicateWarningCard";
 import { SupplementalAttachment } from "@/components/SupplementalAttachment";
+import { AchRecordHint } from "@/components/AchRecordHint";
 
 
 interface InvoiceDetail {
@@ -145,7 +146,33 @@ export default function LowConfidenceQueue() {
   const [vendorSearchResults, setVendorSearchResults] = useState<{id: string, name: string}[]>([]);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [showVendorDropdown, setShowVendorDropdown] = useState(false);
+  // The matched/linked vendor's ACH on record — used to auto-fill blank invoice
+  // ACH fields and to show the "same as / differs from vendor record" hint.
+  const [vendorAch, setVendorAch] = useState<{ routing: string | null; account: string | null } | null>(null);
   const prevInvoiceIdRef = useRef<string | null>(null);
+
+  /**
+   * Load a vendor's on-record ACH details. When `fillBlanks` is set (used on a
+   * manual re-link), any *blank* ACH edit field is filled from the record — an
+   * extracted value is never overwritten; a difference is offered via the hint.
+   */
+  const loadVendorAch = async (vendorId: string, fillBlanks = false) => {
+    const vendor = await vendorsApi.get(vendorId).catch(() => null);
+    const routing = vendor ? ((vendor.ach_routing_number as string | null) ?? null) : null;
+    const account = vendor ? ((vendor.ach_account_number as string | null) ?? null) : null;
+    setVendorAch({ routing, account });
+    if (fillBlanks) {
+      setEditFields((prev) =>
+        prev
+          ? {
+              ...prev,
+              ach_routing_number: prev.ach_routing_number.trim() ? prev.ach_routing_number : routing ?? "",
+              ach_account_number: prev.ach_account_number.trim() ? prev.ach_account_number : account ?? "",
+            }
+          : prev
+      );
+    }
+  };
 
   const searchVendors = async (query: string) => {
     if (!query || query.length < 2) { setVendorSearchResults([]); setShowVendorDropdown(false); return; }
@@ -162,8 +189,10 @@ export default function LowConfidenceQueue() {
       invoice_number: currentInvoice.invoice_number,
       invoice_date: currentInvoice.invoice_date || "",
       due_date: currentInvoice.due_date || "",
-      ach_routing_number: currentInvoice.ach_routing_number || "",
-      ach_account_number: currentInvoice.ach_account_number || "",
+      // Fill blank ACH fields from the matched vendor's record; an extracted
+      // value is left as-is (a difference is surfaced via the hint instead).
+      ach_routing_number: currentInvoice.ach_routing_number || vendorAch?.routing || "",
+      ach_account_number: currentInvoice.ach_account_number || vendorAch?.account || "",
     });
     setIsFieldEditing(true);
   };
@@ -323,6 +352,18 @@ export default function LowConfidenceQueue() {
       }
     }
   }, [currentInvoice]);
+
+  // Pull the matched vendor's ACH on record whenever the linked vendor changes,
+  // so the "same as / differs from vendor record" hint has something to compare.
+  useEffect(() => {
+    const vendorId = currentInvoice?.vendor?.id;
+    if (!vendorId) {
+      setVendorAch(null);
+      return;
+    }
+    loadVendorAch(vendorId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentInvoice?.vendor?.id]);
 
   // Removed: this effect was overriding URL-based navigation from list view
   // currentIndex is now synced from URL id via the effect above
@@ -860,6 +901,8 @@ export default function LowConfidenceQueue() {
                                   setEditFields({...editFields, vendor_name: v.name});
                                   setSelectedVendorId(v.id);
                                   setShowVendorDropdown(false);
+                                  // Fill blank ACH from the newly linked vendor's record.
+                                  void loadVendorAch(v.id, true);
                                 }}>
                                 {v.name}
                               </button>
@@ -941,6 +984,11 @@ export default function LowConfidenceQueue() {
                     ) : (
                       <p className="font-medium font-mono">{currentInvoice?.ach_routing_number || '—'}</p>
                     )}
+                    <AchRecordHint
+                      value={isFieldEditing && editFields ? editFields.ach_routing_number : currentInvoice?.ach_routing_number}
+                      record={vendorAch?.routing}
+                      onUseRecord={isFieldEditing && editFields ? (rec) => setEditFields({ ...editFields, ach_routing_number: rec }) : undefined}
+                    />
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
@@ -980,6 +1028,11 @@ export default function LowConfidenceQueue() {
                     ) : (
                       <p className="font-medium font-mono">{currentInvoice?.ach_account_number || '—'}</p>
                     )}
+                    <AchRecordHint
+                      value={isFieldEditing && editFields ? editFields.ach_account_number : currentInvoice?.ach_account_number}
+                      record={vendorAch?.account}
+                      onUseRecord={isFieldEditing && editFields ? (rec) => setEditFields({ ...editFields, ach_account_number: rec }) : undefined}
+                    />
                   </div>
                 </div>
 {/* GL coding: Account + Approver */}
