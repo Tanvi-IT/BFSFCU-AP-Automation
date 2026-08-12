@@ -9,6 +9,7 @@ import { transaction } from '../db';
 import { AppError } from '../errors';
 import * as prologue from '../prologue';
 import type { InvoiceStatus } from './invoices';
+import { normalizeVendorName } from '../pipeline/vendorAlias';
 
 interface StatusRow {
   id: string;
@@ -348,8 +349,11 @@ export async function updateFields(
   submitAfterSave = false
 ): Promise<void> {
   await transaction(async (client) => {
-    const found = await client.query<StatusRow>(
-      `SELECT id, status, approved_at FROM invoices WHERE id = $1 FOR UPDATE`,
+    const found = await client.query<
+      StatusRow & { vendor_id: string | null; vendor_name_snapshot: string | null }
+    >(
+      `SELECT id, status, approved_at, vendor_id, vendor_name_snapshot
+         FROM invoices WHERE id = $1 FOR UPDATE`,
       [invoiceId]
     );
 
@@ -404,6 +408,53 @@ export async function updateFields(
        VALUES ('invoice', $1, 'fields_edited', $2, $3::jsonb)`,
       [invoiceId, actorId, JSON.stringify({ ...fields, resubmitted: submitAfterSave })]
     );
+
+    // Learn a vendor alias. When a reviewer links a vendor to an invoice that
+    // ingest could NOT match (vendor_id was NULL), the extracted payee text —
+    // still preserved in vendor_name_snapshot, since the edit above never
+    // touches it — becomes a learned mapping to the chosen vendor. Next time the
+    // same spelling arrives it matches before fuzzy scoring. Scoped to the
+    // was-unmatched case so a wrong-match correction (where the snapshot holds
+    // the wrong vendor's name, not the extracted text) can't poison the table.
+    const aliasKey = normalizeVendorName(invoice.vendor_name_snapshot);
+    if (fields.vendorId && invoice.vendor_id === null && aliasKey) {
+      // Best-effort inside a savepoint: learning an alias must never break the
+      // save it rode in on (e.g. before migration 0018 creates the table). The
+      // upsert keeps one row per normalised spelling — re-linking the same payee
+      // to a different vendor REPLACES the mapping, so a lookup stays single.
+      try {
+        await client.query('SAVEPOINT learn_alias');
+        await client.query(
+          `INSERT INTO vendor_name_aliases
+             (alias_norm, alias_raw, vendor_id, created_by, source_invoice_id)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (alias_norm) DO UPDATE
+             SET vendor_id         = EXCLUDED.vendor_id,
+                 alias_raw         = EXCLUDED.alias_raw,
+                 created_by        = EXCLUDED.created_by,
+                 source_invoice_id = EXCLUDED.source_invoice_id,
+                 updated_at        = now()`,
+          [aliasKey, invoice.vendor_name_snapshot, fields.vendorId, actorId, invoiceId]
+        );
+
+        await client.query(
+          `INSERT INTO audit_logs (entity_type, entity_id, action, user_id, metadata)
+           VALUES ('vendor', $1, 'alias_learned', $2, $3::jsonb)`,
+          [
+            fields.vendorId,
+            actorId,
+            JSON.stringify({ alias: invoice.vendor_name_snapshot, fromInvoiceId: invoiceId }),
+          ]
+        );
+        await client.query('RELEASE SAVEPOINT learn_alias');
+      } catch (err) {
+        await client.query('ROLLBACK TO SAVEPOINT learn_alias').catch(() => {});
+        console.warn(
+          'Vendor alias not learned (continuing):',
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
   });
 }
 
