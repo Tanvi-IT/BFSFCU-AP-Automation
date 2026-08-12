@@ -603,10 +603,13 @@ export default function HighConfidenceDetail() {
                     setEditAmount(String(currentInvoice.total_amount));
                     setEditInvoiceNumber(currentInvoice.invoice_number);
                     setEditDate(currentInvoice.invoice_date || "");
-                    // Fill blank ACH fields from the matched vendor's record; an
-                    // extracted value is left as-is (a difference shows in the hint).
-                    setEditAchRouting(currentInvoice.ach_routing_number || vendorAch?.routing || "");
-                    setEditAchAccount(currentInvoice.ach_account_number || vendorAch?.account || "");
+                    // Show the invoice's own ACH as-is. We never silently stage the
+                    // vendor's record here — opening the editor must not change (and
+                    // then save) ACH the reviewer didn't touch. Filling a blank from
+                    // the record is an explicit action: re-linking a vendor, or
+                    // clicking "Use" in the record hint.
+                    setEditAchRouting(currentInvoice.ach_routing_number || "");
+                    setEditAchAccount(currentInvoice.ach_account_number || "");
                     setIsFieldEditing(true);
                   }} className="gap-1">
                     <Pencil className="h-3.5 w-3.5" />

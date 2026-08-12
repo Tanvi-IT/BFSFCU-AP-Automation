@@ -189,10 +189,12 @@ export default function LowConfidenceQueue() {
       invoice_number: currentInvoice.invoice_number,
       invoice_date: currentInvoice.invoice_date || "",
       due_date: currentInvoice.due_date || "",
-      // Fill blank ACH fields from the matched vendor's record; an extracted
-      // value is left as-is (a difference is surfaced via the hint instead).
-      ach_routing_number: currentInvoice.ach_routing_number || vendorAch?.routing || "",
-      ach_account_number: currentInvoice.ach_account_number || vendorAch?.account || "",
+      // Show the invoice's own ACH as-is. We never silently stage the vendor's
+      // record here — opening the editor must not change (and then save) ACH the
+      // reviewer didn't touch. Filling a blank from the record is an explicit
+      // action: re-linking a vendor, or clicking "Use" in the record hint.
+      ach_routing_number: currentInvoice.ach_routing_number || "",
+      ach_account_number: currentInvoice.ach_account_number || "",
     });
     setIsFieldEditing(true);
   };
