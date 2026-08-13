@@ -1,12 +1,12 @@
 import { ReactNode, CSSProperties } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import peapodLogo from "@/assets/tenant-logos/peapod-logo.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
 import { roleLabel } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
-import { LogOut, Shield, ArrowLeft, Menu } from "lucide-react";
+import { LogOut, Shield, Menu } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 
@@ -18,11 +18,6 @@ export const Layout = ({ children }: LayoutProps) => {
   const { signOut, user, isAdmin, userRole } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  const showBackButton = location.pathname !== "/dashboard" &&
-    location.pathname !== "/" &&
-    !location.pathname.match(/^\/(low-confidence|high-confidence|exceptions)\/[^/]+$/);
 
   const handleSignOut = async () => {
     try {
@@ -64,17 +59,6 @@ export const Layout = ({ children }: LayoutProps) => {
             <SidebarTrigger className="h-8 w-8 text-white hover:text-white/80">
               <Menu className="h-4 w-4" />
             </SidebarTrigger>
-            {showBackButton && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate(-1)}
-                className="flex items-center gap-2 text-white hover:text-white/80 hover:bg-white/10"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </Button>
-            )}
             <img
               src={peapodLogo}
               alt="PeaPod"
