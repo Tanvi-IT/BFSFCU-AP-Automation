@@ -491,6 +491,12 @@ export default function HighConfidenceDetail() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Button variant="ghost" size="sm" onClick={() => navigate("/high-confidence")}>
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Back to List
+              </Button>
+            </div>
             <div className="flex flex-wrap items-baseline gap-3">
   <h1 className="flex items-center gap-2 text-3xl font-bold">
     <CheckCircle2 className="h-8 w-8 text-success" />
