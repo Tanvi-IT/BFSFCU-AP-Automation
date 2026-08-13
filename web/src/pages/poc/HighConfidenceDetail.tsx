@@ -491,12 +491,6 @@ export default function HighConfidenceDetail() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/high-confidence")}>
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Back to List
-              </Button>
-            </div>
             <div className="flex flex-wrap items-baseline gap-3">
   <h1 className="flex items-center gap-2 text-3xl font-bold">
     <CheckCircle2 className="h-8 w-8 text-success" />
@@ -517,7 +511,7 @@ export default function HighConfidenceDetail() {
               variant="outline"
               size="icon"
               disabled={currentIndex === 0}
-              onClick={() => setCurrentIndex(currentIndex - 1)}
+              onClick={() => navigate(`/high-confidence/${invoices[currentIndex - 1].id}`)}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -525,7 +519,7 @@ export default function HighConfidenceDetail() {
               variant="outline"
               size="icon"
               disabled={currentIndex === invoices.length - 1}
-              onClick={() => setCurrentIndex(currentIndex + 1)}
+              onClick={() => navigate(`/high-confidence/${invoices[currentIndex + 1].id}`)}
             >
               <ArrowRight className="h-4 w-4" />
             </Button>
