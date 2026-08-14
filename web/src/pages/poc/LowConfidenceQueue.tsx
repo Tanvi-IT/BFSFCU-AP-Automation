@@ -85,6 +85,7 @@ interface InvoiceDetail {
   ach_account_number: string | null;
   vendor: {
     id: string;
+    external_id: string | null;
     name: string;
     status: string;
     bank_verified: boolean;
@@ -382,6 +383,7 @@ export default function LowConfidenceQueue() {
           vendors: r.vendor_name
             ? {
                 id: r.vendor_id ?? "",
+                external_id: (r as any).vendor_external_id ?? null,
                 name: r.vendor_name,
                 // Status comes from the joined vendor row. Without one, the
                 // name is only a snapshot and the vendor is not approved.
@@ -922,7 +924,7 @@ export default function LowConfidenceQueue() {
                       <p className="font-medium">{currentInvoice?.vendor?.name || "Unknown"}</p>
                     )}
                     {currentInvoice?.vendor?.id && (
-                      <p className="text-xs text-muted-foreground mt-0.5">ID: {currentInvoice.vendor.id}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Vendor ID: {currentInvoice.vendor.external_id || "—"}</p>
                     )}
                   </div>
                 </div>

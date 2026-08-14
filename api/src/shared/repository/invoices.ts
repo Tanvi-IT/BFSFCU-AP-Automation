@@ -25,6 +25,9 @@ export interface InvoiceRow {
   id: string;
   vendor_id: string | null;
   vendor_name: string | null;
+  /** The ERP/Prologue vendor number (vendors.external_id) — the "real" vendor id
+   *  people recognise, as opposed to the internal UUID in vendor_id. */
+  vendor_external_id: string | null;
   vendor_status: string | null;
   vendor_bank_verified: boolean | null;
   invoice_number: string | null;
@@ -214,6 +217,7 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
               -- the live vendor may have been removed by a later list upload,
               -- which must not erase who this invoice was for.
               COALESCE(v.name, i.vendor_name_snapshot) AS vendor_name,
+              v.external_id AS vendor_external_id,
               v.status AS vendor_status,
               v.bank_verified AS vendor_bank_verified
        FROM invoices i
@@ -232,6 +236,7 @@ export async function getById(id: string): Promise<InvoiceRow | undefined> {
               -- the live vendor may have been removed by a later list upload,
               -- which must not erase who this invoice was for.
               COALESCE(v.name, i.vendor_name_snapshot) AS vendor_name,
+              v.external_id AS vendor_external_id,
               v.status AS vendor_status,
               v.bank_verified AS vendor_bank_verified
        FROM invoices i

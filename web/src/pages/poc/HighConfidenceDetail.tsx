@@ -74,6 +74,7 @@ interface InvoiceDetail {
   ach_account_number: string | null;
   vendor: {
     id: string;
+    external_id: string | null;
     name: string;
     status: string;
   } | null;
@@ -227,6 +228,7 @@ export default function HighConfidenceDetail() {
         vendors: r.vendor_name
           ? {
               id: r.vendor_id ?? "",
+              external_id: (r as any).vendor_external_id ?? null,
               name: r.vendor_name,
               status: r.vendor_id ? ((r as any).vendor_status ?? "active") : "unverified",
               bank_verified: (r as any).vendor_bank_verified ?? false,
@@ -695,7 +697,7 @@ export default function HighConfidenceDetail() {
   </p>
 )}
                     {currentInvoice.vendor?.id && (
-                      <p className="text-xs text-muted-foreground mt-0.5">ID: {currentInvoice.vendor.id}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Vendor ID: {currentInvoice.vendor.external_id || "—"}</p>
                     )}
                   </div>
                 </div>
