@@ -26,6 +26,9 @@ export type DuplicateType = 'hard' | 'soft' | null;
 
 export interface DuplicateInput {
   invoiceId: string;
+  /** sha256 of the uploaded bytes — identifies an exact re-upload regardless of
+   *  what extraction or vendor matching produced. */
+  fileHash: string | null;
   /** null when the vendor is not on the master list. */
   vendorId: string | null;
   /** The vendor name read off the invoice — used to match copies of an
@@ -62,6 +65,44 @@ interface PriorRow {
 }
 
 export async function detectDuplicate(input: DuplicateInput): Promise<DuplicateResult> {
+  // ---- exact re-upload: identical bytes are the same document --------------
+  // The strongest signal, and the only one that survives an empty/unstable
+  // invoice number or an inconsistent vendor match between two uploads. It runs
+  // first and needs neither a vendor nor a number, so "upload the same file
+  // twice" is always caught — the number/vendor checks below only fire when a
+  // reissue has *different* bytes.
+  if (input.fileHash) {
+    const priors = await query<PriorRow>(
+      `SELECT id, status, approved_at
+         FROM invoices
+        WHERE file_hash = $1 AND id <> $2
+        ORDER BY created_at ASC`,
+      [input.fileHash, input.invoiceId]
+    );
+
+    if (priors.length > 0) {
+      const approved = priors.filter((p) => p.approved_at !== null);
+
+      if (approved.length > 0 && !SUPERSEDE_APPROVED) {
+        return {
+          type: 'hard',
+          duplicateOf: approved[0]?.id ?? null,
+          supersede: [],
+          blockNew: true,
+          message: 'Hard duplicate — an identical file is already approved.',
+        };
+      }
+
+      return {
+        type: 'hard',
+        duplicateOf: priors[priors.length - 1]?.id ?? null,
+        supersede: priors.map((p) => p.id),
+        blockNew: false,
+        message: 'Identical file re-uploaded — earlier copies moved to Exceptions.',
+      };
+    }
+  }
+
   // Duplicate comparison is scoped to the same vendor — identified by id when
   // the vendor is on the master list, otherwise by the name captured on the
   // invoice so re-uploads of an unmatched vendor's invoice still supersede.

@@ -105,6 +105,9 @@ app.storageQueue('process-invoice', {
       // 5. Duplicates.
       const duplicate = await detectDuplicate({
         invoiceId: job.invoiceId,
+        // Exact re-upload guard: identical bytes are a duplicate even when the
+        // number/vendor come out empty or inconsistent between uploads.
+        fileHash: job.fileHash,
         vendorId: vendor.id,
         // The name stored on the invoice; lets re-uploads of an unmatched
         // vendor's invoice still be recognised as duplicates.
