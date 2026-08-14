@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
+import { invoicesApi, QUEUE } from "@/services/invoices";
 import {
   LayoutDashboard,
   Users,
@@ -54,10 +55,16 @@ const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
 /** Top-level, standalone. */
 const dashboardItem = { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard };
 
-/** Processing queues — the daily work, visible to everyone. */
-const queueNavItems = [
-  { title: "High-Confidence Queue", url: "/high-confidence", icon: CheckCircle2 },
-  { title: "Low-Confidence Queue", url: "/low-confidence", icon: AlertTriangle },
+/** Processing queues — the daily work, visible to everyone. `countStatus` marks
+ *  the queues that show a pending-count badge (invoices awaiting review). */
+const queueNavItems: {
+  title: string;
+  url: string;
+  icon: typeof Upload;
+  countStatus?: string;
+}[] = [
+  { title: "High-Confidence Queue", url: "/high-confidence", icon: CheckCircle2, countStatus: QUEUE.highConfidence },
+  { title: "Low-Confidence Queue", url: "/low-confidence", icon: AlertTriangle, countStatus: QUEUE.lowConfidence },
   { title: "Exceptions", url: "/exceptions", icon: AlertOctagon },
   { title: "Declined", url: "/declined", icon: XCircle },
   // Approved is a filtered view of the invoice list, not its own page.
@@ -150,6 +157,24 @@ export function AppSidebar() {
   const { isAdmin } = useAuth();
   const location = useLocation();
 
+  // Pending-review counts per status, polled so the badges stay fresh as new
+  // invoices arrive. Uses the lightweight /invoices-stats count endpoint.
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let active = true;
+    const load = () =>
+      invoicesApi
+        .stats()
+        .then((s) => { if (active) setCounts(s); })
+        .catch(() => {});
+    load();
+    const timer = window.setInterval(load, 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const isActive = (path: string) => {
     if (path === "/dashboard") return location.pathname === "/dashboard";
     if (path === "/invoices?status=approved") {
@@ -158,23 +183,39 @@ export function AppSidebar() {
     return location.pathname.startsWith(path);
   };
 
-  const link = (item: { title: string; url: string; icon: typeof Upload }) => (
-    <SidebarMenuItem key={item.title}>
-      <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
-        <NavLink
-          to={item.url}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
-            "hover:bg-accent hover:text-accent-foreground",
-            isActive(item.url) && "bg-accent text-accent-foreground font-medium"
-          )}
-        >
-          <item.icon className="h-4 w-4 shrink-0" />
-          <span>{item.title}</span>
-        </NavLink>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
+  const link = (item: {
+    title: string;
+    url: string;
+    icon: typeof Upload;
+    countStatus?: string;
+  }) => {
+    const count = item.countStatus ? counts[item.countStatus] ?? 0 : 0;
+    return (
+      <SidebarMenuItem key={item.title}>
+        <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+          <NavLink
+            to={item.url}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
+              "hover:bg-accent hover:text-accent-foreground",
+              isActive(item.url) && "bg-accent text-accent-foreground font-medium"
+            )}
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+            <span>{item.title}</span>
+            {count > 0 && (
+              <span
+                className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground"
+                title={`${count} awaiting review`}
+              >
+                {count}
+              </span>
+            )}
+          </NavLink>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  };
 
   const visibleAdminItems = adminNavItems.filter((i) => !i.adminOnly || isAdmin);
 
