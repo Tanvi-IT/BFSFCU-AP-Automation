@@ -20,8 +20,9 @@ import { app } from '@azure/functions';
 import { createHandler, createMethodHandler, ok, accepted } from '../../shared/handler';
 import { Roles } from '../../shared/authorize';
 import { AppError } from '../../shared/errors';
-import { buildBlobPath, uploadBlob, getReadUrl } from '../../shared/blob';
+import { buildBlobPath, uploadBlob, getReadUrl, downloadBlob } from '../../shared/blob';
 import { enqueueInvoiceJob } from '../../shared/queue';
+import { keepPageRange, deletePages, getPageCount } from '../../shared/pdf';
 import * as invoices from '../../shared/repository/invoices';
 import { recordAudit } from '../../shared/repository/activity';
 import { updateInvoiceRoute, deleteInvoiceRoute } from './workflow';
@@ -313,7 +314,7 @@ app.http('invoices', {
         // unsupported type is a 400 the user sees, not a silent discard.
         const file = files[0]!;
         const contentType = file.type || 'application/octet-stream';
-        const bytes = Buffer.from(await file.arrayBuffer());
+        let bytes: Buffer = Buffer.from(await file.arrayBuffer());
         const filename = file.name || 'invoice.pdf';
         if (!ALLOWED_TYPES[contentType]) {
           throw AppError.validation(
@@ -321,6 +322,28 @@ app.http('invoices', {
           );
         }
         if (bytes.length === 0) throw AppError.validation('The uploaded file is empty');
+
+        // Manual-upload page trim. Only this single-file browser path carries a
+        // range (the email and batch paths never send one), so trimming is, by
+        // construction, manual-upload-only. Keeping just pages [from, to] before
+        // hashing/storing/extracting means a large document is reduced up front
+        // and Document Intelligence is not billed for pages the user dropped.
+        const pageFrom = Number(form.get('pageFrom'));
+        const pageTo = Number(form.get('pageTo'));
+        if (
+          contentType === 'application/pdf' &&
+          Number.isInteger(pageFrom) && Number.isInteger(pageTo) &&
+          pageFrom >= 1 && pageTo >= pageFrom
+        ) {
+          try {
+            bytes = await keepPageRange(bytes, pageFrom, pageTo);
+          } catch (err) {
+            throw AppError.validation(
+              err instanceof Error ? err.message : 'Could not apply the page range'
+            );
+          }
+        }
+
         if (bytes.length > MAX_UPLOAD_BYTES) {
           throw AppError.validation('File exceeds the 20 MB limit');
         }
@@ -384,6 +407,89 @@ app.http('invoices-file', {
     // Short-lived URL; the container itself is never publicly reachable.
     const url = await getReadUrl(invoice.blob_path, 15);
     return ok({ url, expiresInMinutes: 15 });
+  }),
+});
+
+// --------------------------------------------------------------------------
+// GET /api/invoices/{id}/file-bytes
+// The raw PDF, streamed same-origin (via the /api proxy) so the browser's PDF
+// renderer can READ the bytes for page thumbnails without a cross-origin CORS
+// rule on blob storage (the SAS-URL viewer only needs to *display*, not read).
+// --------------------------------------------------------------------------
+app.http('invoices-file-bytes', {
+  methods: ['GET', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'invoices/{id}/file-bytes',
+  handler: createHandler({ roles: Roles.any }, async ({ req }) => {
+    const id = req.params['id'];
+    if (!id) throw AppError.validation('Missing invoice id');
+
+    const invoice = await invoices.getById(id);
+    if (!invoice) throw AppError.notFound('Invoice not found');
+    if (!invoice.blob_path) throw AppError.notFound('Invoice has no stored document');
+
+    const bytes = await downloadBlob(invoice.blob_path);
+    return {
+      status: 200,
+      body: bytes,
+      headers: { 'Content-Type': 'application/pdf', 'Cache-Control': 'no-store' },
+    };
+  }),
+});
+
+// --------------------------------------------------------------------------
+// POST /api/invoices/{id}/pages/delete   { pages: number[] }  (1-based)
+// Remove pages from the stored PDF during review. Rewrites the same blob and
+// refreshes the file hash; does NOT re-extract (that would clobber a reviewer's
+// field edits). An approved invoice is immutable.
+// --------------------------------------------------------------------------
+app.http('invoice-pages-delete', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'invoices/{id}/pages/delete',
+  handler: createHandler({ roles: Roles.reviewer }, async ({ req, user, log }) => {
+    const id = req.params['id'];
+    if (!id) throw AppError.validation('Missing invoice id');
+
+    const body = (await req.json().catch(() => ({}))) as { pages?: unknown };
+    const pages = Array.isArray(body.pages)
+      ? body.pages.filter((n): n is number => Number.isInteger(n) && (n as number) >= 1)
+      : [];
+    if (pages.length === 0) {
+      throw AppError.validation('Provide a non-empty "pages" array of 1-based page numbers');
+    }
+
+    const invoice = await invoices.getById(id);
+    if (!invoice) throw AppError.notFound('Invoice not found');
+    if (invoice.status === 'approved') {
+      throw AppError.conflict('An approved invoice cannot be edited');
+    }
+    if (!invoice.blob_path) throw AppError.validation('Invoice has no stored document');
+
+    const original = await downloadBlob(invoice.blob_path);
+    let trimmed: Buffer;
+    try {
+      trimmed = await deletePages(original, pages);
+    } catch (err) {
+      throw AppError.validation(err instanceof Error ? err.message : 'Could not delete pages');
+    }
+
+    // Overwrite the same blob so the invoice keeps its path, then refresh the
+    // hash so exact-re-upload duplicate detection reflects the current content.
+    await uploadBlob(invoice.blob_path, trimmed, 'application/pdf');
+    await invoices.updateFileHash(id, createHash('sha256').update(trimmed).digest('hex'));
+
+    await recordAudit({
+      entityType: 'invoice',
+      entityId: id,
+      action: 'pages_deleted',
+      userId: user.id,
+      metadata: { pages },
+    });
+
+    const pageCount = await getPageCount(trimmed);
+    log.info('Invoice pages deleted', { invoiceId: id, deleted: pages, pageCount });
+    return ok({ ok: true, pageCount });
   }),
 });
 

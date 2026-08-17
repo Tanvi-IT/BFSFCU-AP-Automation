@@ -39,6 +39,8 @@ import { InvoiceNotes } from "@/components/InvoiceNotes";
 import { InvoiceAuditTrail } from "@/components/poc/InvoiceAuditTrail";
 import { SupplementalAttachment } from "@/components/SupplementalAttachment";
 import { AchRecordHint } from "@/components/AchRecordHint";
+import { PdfPageManager } from "@/components/PdfPageManager";
+import { Files } from "lucide-react";
 
 
 interface InvoiceDetail {
@@ -117,6 +119,7 @@ export default function HighConfidenceDetail() {
   // The matched/linked vendor's ACH on record — used to auto-fill blank invoice
   // ACH fields and to show the "same as / differs from vendor record" hint.
   const [vendorAch, setVendorAch] = useState<{ routing: string | null; account: string | null } | null>(null);
+  const [pdfManagerOpen, setPdfManagerOpen] = useState(false);
   const searchVendors = async (query: string) => {
     if (!query || query.length < 2) { setVendorSearchResults([]); setShowVendorDropdown(false); return; }
     const data = await vendorsApi.list({ search: query }).catch(() => []);
@@ -559,7 +562,7 @@ export default function HighConfidenceDetail() {
                       title="Invoice PDF"
                     />
                   </object>
-                  <div className="text-left">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -567,6 +570,14 @@ export default function HighConfidenceDetail() {
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
                       Open in New Tab
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPdfManagerOpen(true)}
+                    >
+                      <Files className="h-4 w-4 mr-2" />
+                      Manage Pages
                     </Button>
                   </div>
                 </div>
@@ -1046,6 +1057,18 @@ export default function HighConfidenceDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {currentInvoice && (
+        <PdfPageManager
+          open={pdfManagerOpen}
+          onOpenChange={setPdfManagerOpen}
+          invoiceId={currentInvoice.id}
+          onDeleted={() => {
+            fetchPdfUrl();
+            fetchHighConfidenceInvoices();
+          }}
+        />
+      )}
     </Layout>
   );
 }

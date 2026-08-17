@@ -229,6 +229,12 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
   );
 }
 
+/** Refresh the stored file hash after the document bytes change (page delete),
+ *  so exact-re-upload duplicate detection reflects the current content. */
+export async function updateFileHash(id: string, fileHash: string): Promise<void> {
+  await query(`UPDATE invoices SET file_hash = $2 WHERE id = $1`, [id, fileHash]);
+}
+
 export async function getById(id: string): Promise<InvoiceRow | undefined> {
   return queryOne<InvoiceRow>(
     `SELECT i.*, COALESCE(i.raw_file_path, i.blob_path) AS raw_file_path,

@@ -211,15 +211,31 @@ export const invoicesApi = {
    *
    * `onProgress` reports bytes sent, 0–100.
    */
-  upload: (file: File, onProgress?: (percent: number) => void) => {
+  upload: (
+    file: File,
+    onProgress?: (percent: number) => void,
+    /** Manual-upload page trim: keep only pages [from, to] (1-based, inclusive). */
+    pageRange?: { from: number; to: number },
+  ) => {
     const form = new FormData();
     form.append("file", file);
+    if (pageRange) {
+      form.append("pageFrom", String(pageRange.from));
+      form.append("pageTo", String(pageRange.to));
+    }
     return api.uploadWithProgress<UploadAccepted>("/invoices", form, onProgress);
   },
 
   /** Short-lived URL for viewing the original document. */
   fileUrl: (id: string) =>
     api.get<{ url: string; expiresInMinutes: number }>(`/invoices/${id}/file`).then((r) => r.url),
+
+  /** Raw PDF bytes, same-origin (for the page-thumbnail renderer — avoids CORS). */
+  fileBytes: (id: string) => api.blob(`/invoices/${id}/file-bytes`),
+
+  /** Delete pages (1-based) from a stored invoice PDF during review. */
+  deletePages: (id: string, pages: number[]) =>
+    api.post<{ ok: boolean; pageCount: number }>(`/invoices/${id}/pages/delete`, { pages }),
 
   approve: (id: string, note?: string) =>
     api.post<{ id: string; status: string }>(`/invoices/${id}/approve`, { note }),
