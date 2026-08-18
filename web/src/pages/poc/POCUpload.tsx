@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Upload,
   FileText,
+  Files,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -71,6 +72,10 @@ const UPLOAD_CONCURRENCY = 3;
  */
 const MAX_BATCH = 10;
 
+/** "Process Large File(s)" keeps only the first N pages of each PDF before it is
+ *  stored and extracted — a one-click trim for long documents. */
+const LARGE_FILE_TOP_PAGES = 10;
+
 /** How often to ask the API whether the worker has finished a queued invoice. */
 const POLL_INTERVAL_MS = 2500;
 
@@ -106,11 +111,6 @@ export default function POCUpload() {
   const [failedUploads, setFailedUploads] = useState<any[]>([]);
   const [recentOpen, setRecentOpen] = useState(true);
   const [failedOpen, setFailedOpen] = useState(false);
-  // Manual-upload page trim: keep only pages [from, to] of each PDF before it is
-  // stored and extracted. Off by default; the range is sent with every upload.
-  const [trimEnabled, setTrimEnabled] = useState(false);
-  const [pageFrom, setPageFrom] = useState("1");
-  const [pageTo, setPageTo] = useState("");
 
   useEffect(() => {
     void fetchRecentUploads();
@@ -228,25 +228,9 @@ export default function POCUpload() {
     return 'Processing failed — please try again.';
   };
 
-  const processFiles = async () => {
+  const processFiles = async (pageRange?: { from: number; to: number }) => {
     const pending = files.filter((f) => f.stage === "pending");
     if (pending.length === 0) return;
-
-    // Resolve the optional page range once for the whole batch.
-    let pageRange: { from: number; to: number } | undefined;
-    if (trimEnabled) {
-      const from = parseInt(pageFrom, 10);
-      const to = parseInt(pageTo, 10);
-      if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from) {
-        toast({
-          variant: "destructive",
-          title: "Invalid page range",
-          description: "Enter a valid range, e.g. 1 to 3 (from ≥ 1, and to ≥ from).",
-        });
-        return;
-      }
-      pageRange = { from, to };
-    }
 
     setIsProcessing(true);
 
@@ -520,48 +504,6 @@ export default function POCUpload() {
               <p className="text-sm text-muted-foreground mt-1">
               </p>
             </div>
-
-            {/* Large-PDF page trim (manual upload only). */}
-            <div className="mt-4 rounded-lg border bg-muted/30 p-3">
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  checked={trimEnabled}
-                  onChange={(e) => setTrimEnabled(e.target.checked)}
-                  className="h-4 w-4 accent-primary"
-                />
-                Keep only a range of pages (for large PDFs)
-              </label>
-              {trimEnabled ? (
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                  <span className="text-muted-foreground">Pages</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={pageFrom}
-                    onChange={(e) => setPageFrom(e.target.value)}
-                    className="w-16 rounded border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="1"
-                  />
-                  <span className="text-muted-foreground">to</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={pageTo}
-                    onChange={(e) => setPageTo(e.target.value)}
-                    className="w-16 rounded border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="e.g. 3"
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    Only these pages are stored and sent for extraction. Applies to PDF uploads on this page.
-                  </span>
-                </div>
-              ) : (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Off — the whole document is processed. Turn on to drop everything outside a page range before storage and extraction.
-                </p>
-              )}
-            </div>
           </CardContent>
         </Card>
 
@@ -581,22 +523,30 @@ export default function POCUpload() {
               </div>
               <div className="flex gap-2">
                 {pendingCount > 0 && (
-                  <Button
-                    onClick={processFiles}
-                    disabled={isProcessing}
-                  >
-                    {isProcessing ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Uploading...
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="h-4 w-4 mr-2" />
-                        Process All
-                      </>
-                    )}
-                  </Button>
+                  <>
+                    <Button onClick={() => processFiles()} disabled={isProcessing}>
+                      {isProcessing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-4 w-4 mr-2" />
+                          Process All
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={() => processFiles({ from: 1, to: LARGE_FILE_TOP_PAGES })}
+                      disabled={isProcessing}
+                      className="bg-accent text-accent-foreground hover:bg-accent/90"
+                      title={`Keep only the first ${LARGE_FILE_TOP_PAGES} pages of each PDF, then process`}
+                    >
+                      <Files className="h-4 w-4 mr-2" />
+                      Process Large File(s)
+                    </Button>
+                  </>
                 )}
                 {doneCount > 0 && (
                   <Button
