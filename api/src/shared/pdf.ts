@@ -57,6 +57,41 @@ export async function keepPageRange(bytes: Buffer, from: number, to: number): Pr
 }
 
 /**
+ * Redaction. Replace the given 1-indexed pages with flattened images (the page
+ * rendered by the browser with black bars burned in). Because the replacement
+ * is a raster image, the original text/vector content of that page is GONE —
+ * this is true redaction, not a rectangle drawn over recoverable text. Pages not
+ * in the list are copied through untouched (and keep their selectable text).
+ *
+ * Each image should be a JPEG/PNG of the whole page at the page's aspect ratio;
+ * it is drawn to fill the page box, so appearance is preserved.
+ */
+export async function replacePagesWithImages(
+  bytes: Buffer,
+  replacements: { page: number; image: Buffer; kind: 'png' | 'jpg' }[]
+): Promise<Buffer> {
+  const src = await load(bytes);
+  const count = src.getPageCount();
+  const byPage = new Map(replacements.map((r) => [r.page, r]));
+
+  const out = await PDFDocument.create();
+  for (let i = 0; i < count; i++) {
+    const repl = byPage.get(i + 1);
+    if (repl) {
+      const size = src.getPage(i).getSize();
+      const embedded =
+        repl.kind === 'png' ? await out.embedPng(repl.image) : await out.embedJpg(repl.image);
+      const page = out.addPage([size.width, size.height]);
+      page.drawImage(embedded, { x: 0, y: 0, width: size.width, height: size.height });
+    } else {
+      const [copied] = await out.copyPages(src, [i]);
+      out.addPage(copied);
+    }
+  }
+  return Buffer.from(await out.save());
+}
+
+/**
  * Remove the given 1-indexed pages. Unknown/out-of-range page numbers are
  * ignored; deleting every page is refused (an invoice must keep a document).
  */

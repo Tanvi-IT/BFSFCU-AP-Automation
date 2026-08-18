@@ -22,7 +22,7 @@ import { Roles } from '../../shared/authorize';
 import { AppError } from '../../shared/errors';
 import { buildBlobPath, uploadBlob, getReadUrl, downloadBlob } from '../../shared/blob';
 import { enqueueInvoiceJob } from '../../shared/queue';
-import { keepPageRange, deletePages, getPageCount } from '../../shared/pdf';
+import { keepPageRange, deletePages, getPageCount, replacePagesWithImages } from '../../shared/pdf';
 import * as invoices from '../../shared/repository/invoices';
 import { recordAudit } from '../../shared/repository/activity';
 import { updateInvoiceRoute, deleteInvoiceRoute } from './workflow';
@@ -490,6 +490,71 @@ app.http('invoice-pages-delete', {
     const pageCount = await getPageCount(trimmed);
     log.info('Invoice pages deleted', { invoiceId: id, deleted: pages, pageCount });
     return ok({ ok: true, pageCount });
+  }),
+});
+
+// --------------------------------------------------------------------------
+// POST /api/invoices/{id}/redact   { pages: [{ page, image }] }
+// True redaction: each listed page is REPLACED by a flattened image (the page
+// rendered with black bars burned in on the client), so the original text is
+// permanently gone — not merely covered. Rewrites the same blob; does not
+// re-extract; approved invoices are immutable.
+// --------------------------------------------------------------------------
+app.http('invoice-redact', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'invoices/{id}/redact',
+  handler: createHandler({ roles: Roles.reviewer }, async ({ req, user, log }) => {
+    const id = req.params['id'];
+    if (!id) throw AppError.validation('Missing invoice id');
+
+    const body = (await req.json().catch(() => ({}))) as {
+      pages?: Array<{ page?: unknown; image?: unknown }>;
+    };
+    const replacements: { page: number; image: Buffer; kind: 'png' | 'jpg' }[] = [];
+    for (const it of Array.isArray(body.pages) ? body.pages : []) {
+      const page = Number(it.page);
+      const image = typeof it.image === 'string' ? it.image : '';
+      if (!Number.isInteger(page) || page < 1 || !image) continue;
+      // Accept a data URL ("data:image/png;base64,...") or bare base64.
+      const comma = image.indexOf(',');
+      const b64 = image.startsWith('data:') && comma >= 0 ? image.slice(comma + 1) : image;
+      const kind: 'png' | 'jpg' = image.includes('image/png') ? 'png' : 'jpg';
+      replacements.push({ page, image: Buffer.from(b64, 'base64'), kind });
+    }
+
+    if (replacements.length === 0) {
+      throw AppError.validation('No redaction images were provided');
+    }
+
+    const invoice = await invoices.getById(id);
+    if (!invoice) throw AppError.notFound('Invoice not found');
+    if (invoice.status === 'approved') {
+      throw AppError.conflict('An approved invoice cannot be edited');
+    }
+    if (!invoice.blob_path) throw AppError.validation('Invoice has no stored document');
+
+    const original = await downloadBlob(invoice.blob_path);
+    let redacted: Buffer;
+    try {
+      redacted = await replacePagesWithImages(original, replacements);
+    } catch (err) {
+      throw AppError.validation(err instanceof Error ? err.message : 'Could not redact the document');
+    }
+
+    await uploadBlob(invoice.blob_path, redacted, 'application/pdf');
+    await invoices.updateFileHash(id, createHash('sha256').update(redacted).digest('hex'));
+
+    const pages = replacements.map((r) => r.page);
+    await recordAudit({
+      entityType: 'invoice',
+      entityId: id,
+      action: 'redacted',
+      userId: user.id,
+      metadata: { pages },
+    });
+    log.info('Invoice redacted', { invoiceId: id, pages });
+    return ok({ ok: true });
   }),
 });
 

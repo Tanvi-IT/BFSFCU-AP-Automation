@@ -40,7 +40,8 @@ import { InvoiceAuditTrail } from "@/components/poc/InvoiceAuditTrail";
 import { SupplementalAttachment } from "@/components/SupplementalAttachment";
 import { AchRecordHint } from "@/components/AchRecordHint";
 import { PdfPageManager } from "@/components/PdfPageManager";
-import { Files } from "lucide-react";
+import { PdfRedactor } from "@/components/PdfRedactor";
+import { Files, ShieldAlert } from "lucide-react";
 
 
 interface InvoiceDetail {
@@ -120,6 +121,7 @@ export default function HighConfidenceDetail() {
   // ACH fields and to show the "same as / differs from vendor record" hint.
   const [vendorAch, setVendorAch] = useState<{ routing: string | null; account: string | null } | null>(null);
   const [pdfManagerOpen, setPdfManagerOpen] = useState(false);
+  const [redactorOpen, setRedactorOpen] = useState(false);
   const searchVendors = async (query: string) => {
     if (!query || query.length < 2) { setVendorSearchResults([]); setShowVendorDropdown(false); return; }
     const data = await vendorsApi.list({ search: query }).catch(() => []);
@@ -578,6 +580,14 @@ export default function HighConfidenceDetail() {
                     >
                       <Files className="h-4 w-4 mr-2" />
                       Manage Pages
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRedactorOpen(true)}
+                    >
+                      <ShieldAlert className="h-4 w-4 mr-2" />
+                      Redact
                     </Button>
                   </div>
                 </div>
@@ -1064,6 +1074,18 @@ export default function HighConfidenceDetail() {
           onOpenChange={setPdfManagerOpen}
           invoiceId={currentInvoice.id}
           onDeleted={() => {
+            fetchPdfUrl();
+            fetchHighConfidenceInvoices();
+          }}
+        />
+      )}
+
+      {currentInvoice && (
+        <PdfRedactor
+          open={redactorOpen}
+          onOpenChange={setRedactorOpen}
+          invoiceId={currentInvoice.id}
+          onRedacted={() => {
             fetchPdfUrl();
             fetchHighConfidenceInvoices();
           }}

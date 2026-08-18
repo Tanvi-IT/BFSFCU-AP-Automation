@@ -237,6 +237,14 @@ export const invoicesApi = {
   deletePages: (id: string, pages: number[]) =>
     api.post<{ ok: boolean; pageCount: number }>(`/invoices/${id}/pages/delete`, { pages }),
 
+  /**
+   * Redact pages: replace each given page with a flattened image (rendered with
+   * black bars burned in), permanently removing the underlying text. `image` is
+   * a data URL / base64 of the whole page at its aspect ratio.
+   */
+  redact: (id: string, pages: { page: number; image: string }[]) =>
+    api.post<{ ok: boolean }>(`/invoices/${id}/redact`, { pages }),
+
   approve: (id: string, note?: string) =>
     api.post<{ id: string; status: string }>(`/invoices/${id}/approve`, { note }),
 

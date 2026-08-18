@@ -1,0 +1,49 @@
+name: Deploy Web (Static Web App)
+
+# Auto-deploys the React app to the bfsfcuap-web Static Web App whenever web
+# code lands on main. Runs on GitHub's hosted runners, so it does NOT hit the
+# corporate proxy / local az token that make manual `swa deploy` painful.
+#
+# Required repo secret (Settings → Secrets and variables → Actions):
+#   AZURE_STATIC_WEB_APPS_API_TOKEN
+#     = az staticwebapp secrets list -g rg-peapod-test -n bfsfcuap-web \
+#         --query properties.apiKey -o tsv
+#     (or Static Web App → Overview → "Manage deployment token" in the portal)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install & build
+        working-directory: web
+        env:
+          # Same flag the manual deploy uses — shows the demo-reset control and
+          # keeps the API same-origin under /api.
+          VITE_DEMO_MODE: 'true'
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          # We prebuild above, then upload the finished dist as-is.
+          app_location: 'web/dist'
+          skip_app_build: true
+          skip_api_build: true
