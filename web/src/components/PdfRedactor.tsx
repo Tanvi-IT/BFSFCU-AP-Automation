@@ -10,7 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, ShieldAlert, X } from "lucide-react";
+import { Loader2, ShieldAlert, Undo2, X } from "lucide-react";
 import { invoicesApi } from "@/services/invoices";
 import { useToast } from "@/hooks/use-toast";
 
@@ -35,6 +35,12 @@ interface Pg {
   page: number; // 1-based
   dataUrl: string;
 }
+/** A drawn box, kept in an ordered list so "undo last" can pop the newest. */
+interface Box {
+  id: number;
+  page: number;
+  rect: Rect;
+}
 interface Drag {
   page: number;
   x0: number;
@@ -57,16 +63,18 @@ export function PdfRedactor({ open, onOpenChange, invoiceId, onRedacted }: PdfRe
   const [pages, setPages] = useState<Pg[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [rects, setRects] = useState<Record<number, Rect[]>>({});
+  const [boxes, setBoxes] = useState<Box[]>([]);
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
+  const idRef = useRef(0);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
     setPages([]);
-    setRects({});
+    setBoxes([]);
+    idRef.current = 0;
     setDrag(null);
     dragRef.current = null;
 
@@ -144,13 +152,14 @@ export function PdfRedactor({ open, onOpenChange, invoiceId, onRedacted }: PdfRe
       h: Math.abs(d.y1 - d.y0),
     };
     if (rect.w < MIN_SIZE || rect.h < MIN_SIZE) return;
-    setRects((prev) => ({ ...prev, [d.page]: [...(prev[d.page] ?? []), rect] }));
+    setBoxes((prev) => [...prev, { id: idRef.current++, page: d.page, rect }]);
   };
 
-  const removeRect = (page: number, idx: number) =>
-    setRects((prev) => ({ ...prev, [page]: (prev[page] ?? []).filter((_, i) => i !== idx) }));
+  const removeBox = (id: number) => setBoxes((prev) => prev.filter((b) => b.id !== id));
+  /** Undo the most recently drawn box (any page), while still editing. */
+  const undoLast = () => setBoxes((prev) => prev.slice(0, -1));
 
-  const totalBoxes = Object.values(rects).reduce((n, r) => n + r.length, 0);
+  const totalBoxes = boxes.length;
 
   const flatten = (dataUrl: string, rs: Rect[]): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -173,12 +182,18 @@ export function PdfRedactor({ open, onOpenChange, invoiceId, onRedacted }: PdfRe
     });
 
   const apply = async () => {
-    const targets = pages.filter((p) => (rects[p.page]?.length ?? 0) > 0);
+    const targets = pages.filter((p) => boxes.some((b) => b.page === p.page));
     if (targets.length === 0) return;
     setSaving(true);
     try {
       const payload = await Promise.all(
-        targets.map(async (p) => ({ page: p.page, image: await flatten(p.dataUrl, rects[p.page]!) }))
+        targets.map(async (p) => ({
+          page: p.page,
+          image: await flatten(
+            p.dataUrl,
+            boxes.filter((b) => b.page === p.page).map((b) => b.rect)
+          ),
+        }))
       );
       await invoicesApi.redact(invoiceId, payload);
       toast({
@@ -229,7 +244,7 @@ export function PdfRedactor({ open, onOpenChange, invoiceId, onRedacted }: PdfRe
           ) : (
             <div className="flex flex-col items-center gap-4">
               {pages.map((p) => {
-                const pageRects = rects[p.page] ?? [];
+                const pageBoxes = boxes.filter((b) => b.page === p.page);
                 return (
                   <div key={p.page} className="w-full max-w-[640px]">
                     <div className="mb-1 text-xs text-muted-foreground">Page {p.page}</div>
@@ -247,15 +262,15 @@ export function PdfRedactor({ open, onOpenChange, invoiceId, onRedacted }: PdfRe
                         onMouseUp={finishDrag}
                         onMouseLeave={finishDrag}
                       >
-                        {pageRects.map((r, i) => (
+                        {pageBoxes.map((b) => (
                           <div
-                            key={i}
+                            key={b.id}
                             className="group absolute bg-black/80"
                             style={{
-                              left: `${r.x * 100}%`,
-                              top: `${r.y * 100}%`,
-                              width: `${r.w * 100}%`,
-                              height: `${r.h * 100}%`,
+                              left: `${b.rect.x * 100}%`,
+                              top: `${b.rect.y * 100}%`,
+                              width: `${b.rect.w * 100}%`,
+                              height: `${b.rect.h * 100}%`,
                             }}
                           >
                             <button
@@ -263,7 +278,7 @@ export function PdfRedactor({ open, onOpenChange, invoiceId, onRedacted }: PdfRe
                               onMouseDown={(e) => e.stopPropagation()}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                removeRect(p.page, i);
+                                removeBox(b.id);
                               }}
                               className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground group-hover:flex"
                               title="Remove this box"
@@ -300,8 +315,12 @@ export function PdfRedactor({ open, onOpenChange, invoiceId, onRedacted }: PdfRe
         <DialogFooter className="items-center">
           <span className="mr-auto flex items-center gap-1 text-sm text-muted-foreground">
             <ShieldAlert className="h-4 w-4" />
-            {totalBoxes} box{totalBoxes === 1 ? "" : "es"} — permanent, no undo
+            {totalBoxes} box{totalBoxes === 1 ? "" : "es"} marked
           </span>
+          <Button variant="ghost" onClick={undoLast} disabled={saving || totalBoxes === 0}>
+            <Undo2 className="mr-2 h-4 w-4" />
+            Undo last
+          </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
