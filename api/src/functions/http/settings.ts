@@ -95,10 +95,13 @@ app.http('settings-prologue', {
       throw AppError.validation('Host, Database, and User are required to enable Prologue.');
     }
 
-    // TLS is fixed on with a trusted server cert — the app connects to SQL Server
-    // over a private VNet, so there's no toggle to expose. Posting defaults
-    // (company id / default GL account / source user) are owned by the stored
-    // procedure — the app keeps their DB defaults.
+    // TLS options are admin-controlled: encrypt defaults on, but an on-prem SQL
+    // Server with no TLS configured needs it off, and a self-signed cert needs
+    // trust on. Posting defaults (company id / default GL account / source user)
+    // are owned by the stored procedure — the app keeps their DB defaults.
+    const encrypt = body['encrypt'] !== false;
+    const trustServerCertificate = body['trustServerCertificate'] === true;
+
     const updated = await updatePrologueSettings({
       enabled,
       host,
@@ -106,8 +109,8 @@ app.http('settings-prologue', {
       database,
       user,
       password,
-      encrypt: true,
-      trustServerCertificate: true,
+      encrypt,
+      trustServerCertificate,
     });
     log.info('Prologue settings updated', { enabled: updated.enabled });
     return ok(updated);
@@ -131,9 +134,11 @@ app.http('settings-prologue-test', {
     if (user) override.user = user;
     const portRaw = Number(body['port']);
     if (Number.isFinite(portRaw) && portRaw > 0) override.port = Math.trunc(portRaw);
-    // TLS fixed on with a trusted server cert (private VNet) — matches a saved connection.
-    override.encrypt = true;
-    override.trustServerCertificate = true;
+    // TLS options come from the (possibly unsaved) form; when absent, testConnection
+    // falls back to the stored connection's values.
+    if (typeof body['encrypt'] === 'boolean') override.encrypt = body['encrypt'];
+    if (typeof body['trustServerCertificate'] === 'boolean')
+      override.trustServerCertificate = body['trustServerCertificate'];
     if (typeof body['password'] === 'string' && (body['password'] as string).length > 0)
       override.password = body['password'] as string;
 

@@ -35,6 +35,8 @@ export default function PrologueSettings() {
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
   const [passwordSet, setPasswordSet] = useState(false);
+  const [encrypt, setEncrypt] = useState(true);
+  const [trustServerCertificate, setTrustServerCertificate] = useState(false);
 
   const applySettings = (c: Settings) => {
     setEnabled(c.enabled);
@@ -42,6 +44,8 @@ export default function PrologueSettings() {
     setPort(String(c.port ?? 1433));
     setDatabase(c.database ?? "");
     setUser(c.user ?? "");
+    setEncrypt(c.encrypt);
+    setTrustServerCertificate(c.trustServerCertificate);
     setPasswordSet(c.passwordSet);
     setPassword("");
   };
@@ -63,6 +67,8 @@ export default function PrologueSettings() {
     port: Number(port) || 1433,
     database: database.trim() || null,
     user: user.trim() || null,
+    encrypt,
+    trustServerCertificate,
     ...(password ? { password } : {}),
   });
 
@@ -209,6 +215,42 @@ export default function PrologueSettings() {
                       A password is stored (encrypted). Enter a new one only to change it.
                     </p>
                   )}
+                </div>
+
+                <div className="space-y-4 rounded-lg border p-3 bg-muted/40">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="pg-encrypt" className="cursor-pointer">
+                        Encrypt connection (TLS)
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        On by default. Turn off only if the SQL Server has no TLS configured.
+                      </p>
+                    </div>
+                    <Switch
+                      id="pg-encrypt"
+                      checked={encrypt}
+                      onCheckedChange={setEncrypt}
+                      className="mt-0.5 shrink-0"
+                    />
+                  </div>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="pg-trust" className="cursor-pointer">
+                        Trust server certificate
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Accept a self-signed certificate. Keep on for an on-prem SQL Server
+                        reached over a private network.
+                      </p>
+                    </div>
+                    <Switch
+                      id="pg-trust"
+                      checked={trustServerCertificate}
+                      onCheckedChange={setTrustServerCertificate}
+                      className="mt-0.5 shrink-0"
+                    />
+                  </div>
                 </div>
               </CardContent>
             </Card>
