@@ -834,7 +834,7 @@ export default function LowConfidenceQueue() {
                       onClick={() => setPdfManagerOpen(true)}
                     >
                       <Files className="h-4 w-4 mr-2" />
-                      Manage Pages
+                      Delete Pages
                     </Button>
                     <Button
                       variant="outline"

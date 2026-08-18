@@ -132,10 +132,13 @@ export function PdfPageManager({ open, onOpenChange, invoiceId, onDeleted }: Pdf
     <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Manage pages</DialogTitle>
+          <DialogTitle>Delete pages</DialogTitle>
           <DialogDescription>
             Click a page to mark it for deletion, then apply. This updates the stored
-            PDF only — it does not re-run extraction, so review the fields afterwards.
+            PDF only — it does not re-run extraction, so review the fields afterwards.{" "}
+            <strong className="font-bold text-destructive">
+              This permanently deletes the selected pages and cannot be undone.
+            </strong>
           </DialogDescription>
         </DialogHeader>
 
