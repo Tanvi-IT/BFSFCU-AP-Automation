@@ -18,7 +18,7 @@ import { normalizeInvoice } from '../../shared/ai/openai';
 import { resolveVendor } from '../../shared/pipeline/vendorMatch';
 import { detectDuplicate } from '../../shared/pipeline/duplicateCheck';
 import { routeInvoice } from '../../shared/pipeline/routing';
-import { saveProcessedInvoice } from '../../shared/pipeline/persist';
+import { saveProcessedInvoice, saveCreditMemo } from '../../shared/pipeline/persist';
 import * as invoices from '../../shared/repository/invoices';
 import { createLogger } from '../../shared/logger';
 import { config } from '../../shared/config';
@@ -69,7 +69,21 @@ app.storageQueue('process-invoice', {
       invoiceLog.info('Extraction complete', {
         invoiceNumber: extracted.invoiceNumber,
         lineItems: extracted.lineItems.length,
+        documentType: extracted.documentType,
       });
+
+      // 2b. Classify. A credit memo is not a payable invoice: tag it and park it
+      //     in the Credit Memo list for a human to view. No fields are extracted
+      //     for now — the AI data stage, vendor matching, duplicate detection and
+      //     routing are all skipped.
+      if (extracted.documentType === 'credit_memo') {
+        invoiceLog.info('Classified as credit memo; skipping AI data stage', {
+          documentNumber: extracted.invoiceNumber,
+        });
+        await saveCreditMemo({ invoiceId: job.invoiceId });
+        invoiceLog.info('Credit memo stored');
+        return;
+      }
 
       // 3. Normalise (non-blocking — never lose an invoice to a reasoning failure).
       const normalized = await normalizeInvoice(extracted, invoiceLog);

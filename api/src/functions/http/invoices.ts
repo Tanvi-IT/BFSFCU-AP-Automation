@@ -92,6 +92,14 @@ app.http('invoices', {
         const status = url.searchParams.get('status') ?? undefined;
         const search = url.searchParams.get('search') ?? undefined;
 
+        // Document class. Invoices only by default; 'credit_memo' returns the
+        // Credit Memo list. Anything else is a 400 rather than a silent ignore.
+        const documentTypeRaw = url.searchParams.get('documentType');
+        if (documentTypeRaw && documentTypeRaw !== 'invoice' && documentTypeRaw !== 'credit_memo') {
+          throw AppError.validation("documentType must be 'invoice' or 'credit_memo'");
+        }
+        const documentType = (documentTypeRaw as 'invoice' | 'credit_memo' | null) ?? undefined;
+
         // Date range for the historical queues. Validated here so a malformed
         // value is a 400 rather than a Postgres cast error surfacing as a 500.
         const dateFrom = url.searchParams.get('dateFrom') ?? undefined;
@@ -127,6 +135,7 @@ app.http('invoices', {
           offset: Number.isFinite(offset) ? offset : 0,
           ...(status ? { status: status as invoices.InvoiceStatus } : {}),
           ...(search ? { search } : {}),
+          ...(documentType ? { documentType } : {}),
           ...(dateFrom ? { dateFrom } : {}),
           ...(dateTo ? { dateTo } : {}),
           ...(dateField ? { dateField } : {}),

@@ -13,6 +13,9 @@ import { config } from '../config';
 import { docIntelAuthHeaders } from './credential';
 import { AppError } from '../errors';
 
+/** What the document is. A credit memo is not a payable invoice. */
+export type DocumentType = 'invoice' | 'credit_memo';
+
 export interface ExtractedInvoice {
   invoiceNumber: string | null;
   invoiceDate: string | null;
@@ -24,8 +27,41 @@ export interface ExtractedInvoice {
   vendorName: string | null;
   vendorTaxId: string | null;
   lineItems: ExtractedLineItem[];
+  /**
+   * Invoice vs. credit memo, decided from the OCR result (see
+   * `classifyDocumentType`). The worker parks credit memos in their own list
+   * and skips the AI data stage for them.
+   */
+  documentType: DocumentType;
   /** Raw OCR text — needed to correct date-label swaps in stage 2. */
   rawText: string;
+}
+
+/** Titles a credit memo announces itself with. Matched case-insensitively. */
+const CREDIT_MEMO_PATTERNS: readonly RegExp[] = [
+  /credit\s*memo(?:randum)?/i,
+  /credit\s*note/i,
+];
+
+/**
+ * Classify the document from its OCR text: a payable INVOICE, or a CREDIT MEMO
+ * (a.k.a. credit note / memorandum) that reduces what is owed.
+ *
+ * The `prebuilt-invoice` model does not distinguish the two — it labels
+ * everything `docType: "invoice"` — so we read the text itself. Only the header
+ * region (the first ~1500 characters, where a document states what it is) is
+ * examined, so an ordinary invoice that merely mentions "credit memo" deep in
+ * its terms is not misclassified.
+ *
+ * This is a deliberately simple, no-extra-AI signal, isolated here so it can be
+ * upgraded to a trained classifier later without touching the worker.
+ */
+export function classifyDocumentType(rawText: string): DocumentType {
+  const header = (rawText ?? '').slice(0, 1500);
+  for (const pattern of CREDIT_MEMO_PATTERNS) {
+    if (pattern.test(header)) return 'credit_memo';
+  }
+  return 'invoice';
 }
 
 export interface ExtractedLineItem {
@@ -174,6 +210,7 @@ export async function analyzeInvoice(file: Buffer): Promise<ExtractedInvoice> {
         vendorName: str(f['VendorName']),
         vendorTaxId: str(f['VendorTaxId']),
         lineItems,
+        documentType: classifyDocumentType(body.analyzeResult?.content ?? ''),
         rawText: body.analyzeResult?.content ?? '',
       };
     }

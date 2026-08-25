@@ -142,6 +142,12 @@ export type DateField = (typeof DATE_FIELDS)[number];
 export interface ListFilters {
   status?: InvoiceStatus;
   search?: string;
+  /**
+   * Filter by document class. Omitted (or 'invoice') returns invoices only —
+   * credit memos are kept out of every invoice queue. Pass 'credit_memo' to
+   * return credit memos instead (the Credit Memo list).
+   */
+  documentType?: 'invoice' | 'credit_memo';
   /** Inclusive `YYYY-MM-DD` bounds, applied to `dateField`. */
   dateFrom?: string;
   dateTo?: string;
@@ -156,6 +162,15 @@ export interface ListFilters {
 export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
+
+  // Credit memos live in their own list; keep them out of every invoice queue
+  // unless explicitly requested. Legacy rows have document_type NULL, so
+  // `IS DISTINCT FROM 'credit_memo'` keeps them counted as invoices.
+  if (filters.documentType === 'credit_memo') {
+    where.push(`i.document_type = 'credit_memo'`);
+  } else {
+    where.push(`i.document_type IS DISTINCT FROM 'credit_memo'`);
+  }
 
   if (filters.status) {
     // Accept a single status or a comma-separated set (e.g. the audit "In Queue"
@@ -330,8 +345,14 @@ export async function codingSuggestionForInvoice(
 }
 
 export async function countByStatus(): Promise<Record<string, number>> {
+  // Credit memos are not invoices — exclude them so the queue badges stay
+  // accurate (a credit memo rests at 'validated' but must not inflate the
+  // Low-Confidence count).
   const rows = await query<{ status: string; count: string }>(
-    `SELECT status, COUNT(*)::text AS count FROM invoices GROUP BY status`
+    `SELECT status, COUNT(*)::text AS count
+       FROM invoices
+      WHERE document_type IS DISTINCT FROM 'credit_memo'
+      GROUP BY status`
   );
   return Object.fromEntries(rows.map((r) => [r.status, Number(r.count)]));
 }

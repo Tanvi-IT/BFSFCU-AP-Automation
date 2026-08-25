@@ -32,6 +32,8 @@ import ExceptionDetail from "./pages/poc/ExceptionDetail";
 import DeclinedQueue from "./pages/poc/DeclinedQueue";
 import InboxMonitor from "./pages/poc/InboxMonitor";
 import PrologueSettings from "./pages/poc/PrologueSettings";
+import CreditMemoList from "./pages/poc/CreditMemoList";
+import CreditMemoDetail from "./pages/poc/CreditMemoDetail";
 
 const queryClient = new QueryClient();
 
@@ -70,6 +72,10 @@ const App = () => {
             <Route path="/exceptions" element={<AuthGate><ExceptionsQueue /></AuthGate>} />
             <Route path="/exceptions/:id" element={<AuthGate><ExceptionDetail /></AuthGate>} />
             <Route path="/declined" element={<AuthGate><DeclinedQueue /></AuthGate>} />
+
+            {/* Credit memos — classified out of the invoice pipeline */}
+            <Route path="/credit-memos" element={<AuthGate><CreditMemoList /></AuthGate>} />
+            <Route path="/credit-memos/:id" element={<AuthGate><CreditMemoDetail /></AuthGate>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

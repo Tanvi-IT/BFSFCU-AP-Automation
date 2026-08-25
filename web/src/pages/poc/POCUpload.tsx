@@ -57,6 +57,8 @@ interface UploadFile {
   invoiceId?: string;
   /** Where the worker finally put the invoice, once it is out of our hands. */
   finalStatus?: InvoiceStatus;
+  /** Set once the worker classifies it — a credit memo routes to its own viewer. */
+  documentType?: string | null;
   /** When the file entered the queue, used to stop waiting on a dead worker. */
   queuedAt?: number;
 }
@@ -338,10 +340,12 @@ export default function POCUpload() {
 
       const latest = new Map<string, InvoiceStatus>();
       const errors = new Map<string, string | null>();
+      const docTypes = new Map<string, string | null>();
       for (const r of results) {
         if (r.status === "fulfilled") {
           latest.set(r.value.fileId, r.value.invoice.status);
           errors.set(r.value.fileId, r.value.invoice.processing_error);
+          docTypes.set(r.value.fileId, r.value.invoice.document_type ?? null);
         }
       }
       if (latest.size === 0) return;
@@ -380,6 +384,7 @@ export default function POCUpload() {
               ...f,
               stage: "done",
               finalStatus: status,
+              documentType: docTypes.get(f.id) ?? null,
               error: errors.get(f.id) ?? undefined,
             };
           }
@@ -636,7 +641,13 @@ export default function POCUpload() {
                         variant="ghost"
                         size="sm"
                         onClick={() =>
-                          navigate(invoiceRoute(uploadFile.finalStatus, uploadFile.invoiceId))
+                          navigate(
+                            invoiceRoute(
+                              uploadFile.finalStatus,
+                              uploadFile.invoiceId,
+                              uploadFile.documentType
+                            )
+                          )
                         }
                       >
                         View
@@ -696,7 +707,7 @@ export default function POCUpload() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigate(invoiceRoute(inv.status, inv.id))}
+                          onClick={() => navigate(invoiceRoute(inv.status, inv.id, inv.document_type))}
                         >
                           View
                         </Button>

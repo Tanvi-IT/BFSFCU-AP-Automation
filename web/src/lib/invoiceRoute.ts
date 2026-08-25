@@ -12,8 +12,16 @@
  *
  * Shared by the Upload page's Recent Uploads and the Inbox Monitor so both route
  * a "View" the same way.
+ *
+ * A credit memo is not in any invoice queue — it has its own viewer — so it is
+ * routed there regardless of status when `documentType` says so.
  */
-export function invoiceRoute(status: string | undefined, id: string | undefined): string {
+export function invoiceRoute(
+  status: string | undefined,
+  id: string | undefined,
+  documentType?: string | null
+): string {
+  if (documentType === "credit_memo") return `/credit-memos/${id}`;
   switch (status) {
     case "exception":
       return `/exceptions/${id}`;

@@ -139,6 +139,12 @@ export interface Attachment {
 export interface ListParams {
   status?: InvoiceStatus;
   search?: string;
+  /**
+   * Document class. Omitted (or 'invoice') returns invoices only — credit memos
+   * are excluded from every invoice queue. Pass 'credit_memo' for the Credit
+   * Memo list.
+   */
+  documentType?: "invoice" | "credit_memo";
   /** Inclusive `YYYY-MM-DD` bounds. Both ends are optional. */
   dateFrom?: string;
   dateTo?: string;
@@ -160,6 +166,7 @@ export const invoicesApi = {
       .get<{ invoices: Invoice[] }>("/invoices", {
         status: params.status,
         search: params.search,
+        documentType: params.documentType,
         dateFrom: params.dateFrom,
         dateTo: params.dateTo,
         dateField: params.dateField,
