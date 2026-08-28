@@ -19,6 +19,7 @@ import { resolveVendor } from '../../shared/pipeline/vendorMatch';
 import { detectDuplicate } from '../../shared/pipeline/duplicateCheck';
 import { routeInvoice } from '../../shared/pipeline/routing';
 import { saveProcessedInvoice, saveCreditMemo } from '../../shared/pipeline/persist';
+import { computeTaxAdjustment } from '../../shared/pipeline/taxflag';
 import * as invoices from '../../shared/repository/invoices';
 import { createLogger } from '../../shared/logger';
 import { config } from '../../shared/config';
@@ -98,7 +99,7 @@ app.storageQueue('process-invoice', {
       const totalAmount = normalized?.totalAmount ?? extracted.totalAmount;
       const currency = normalized?.currency ?? extracted.currency;
       const subtotalAmount = normalized?.subtotalAmount ?? extracted.subtotalAmount;
-      const taxAmount = normalized?.taxAmount ?? extracted.taxAmount;
+      const rawTaxAmount = normalized?.taxAmount ?? extracted.taxAmount;
       const vendorTaxId = normalized?.vendorTaxId ?? extracted.vendorTaxId;
 
       // 4. Vendor: exact identifiers → trigram similarity → AI as last resort.
@@ -136,7 +137,14 @@ app.storageQueue('process-invoice', {
       //     `tax_line_detected` is advisory and fires on a $0 tax line, which
       //     must not flag an otherwise-clean invoice. The flag in variation_flags
       //     is reconciled to match the amount so the two never disagree.
-      const taxFlagged = taxAmount !== null && taxAmount > 0;
+      const taxAdjustment = computeTaxAdjustment(
+        rawTaxAmount,
+        extracted.lineItems,
+        extracted.rawText,
+        normalized?.surplusAmountCharged ?? null
+      );
+      const taxAmount = taxAdjustment.taxAmount;
+      const taxFlagged = taxAdjustment.taxFlagged;
       const taxFlagReason = taxFlagged
         ? 'Tax line detected — organisation is tax-exempt.'
         : null;
@@ -162,6 +170,9 @@ app.storageQueue('process-invoice', {
         (f) => f !== 'tax_line_detected' && !(dueDateDefaulted && f === 'due_date_missed_on_document')
       );
       if (taxFlagged) flags = [...flags, 'tax_line_detected'];
+      if (taxAdjustment.surplusAmountCharged !== null) {
+        flags = [...flags, 'surplus_amount_charged'];
+      }
 
       // 5d. GL coding: inherit this vendor's last coded invoice (approved first,
       //     then validated/submitted) so a new upload arrives already coded.

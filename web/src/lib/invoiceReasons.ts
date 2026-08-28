@@ -4,6 +4,7 @@
 const FLAG_LABELS: Record<string, string> = {
   TAX_LINE_DETECTED: "Tax amount charged",
   tax_line_detected: "Tax amount charged",
+  surplus_amount_charged: "Surplus amount charged",
   price_spike: "Price spike detected",
   duplicate_exact: "Duplicate invoice — under review",
   duplicate_invoice_number: "Duplicate invoice number",

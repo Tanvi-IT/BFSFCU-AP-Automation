@@ -38,6 +38,7 @@ export interface NormalizedInvoice {
   poNumber: string | null;
   achRoutingNumber: string | null;
   achAccountNumber: string | null;
+  surplusAmountCharged: number | null;
   confidence: number;
   flags: string[];
 }
@@ -91,6 +92,7 @@ const RESPONSE_SCHEMA = {
     'po_number',
     'ach_routing_number',
     'ach_account_number',
+    'surplus_amount_charged',
     'confidence',
     'flags',
   ],
@@ -112,6 +114,10 @@ const RESPONSE_SCHEMA = {
     ach_account_number: {
       type: ['string', 'null'],
       description: 'Bank account number from the payment details',
+    },
+    surplus_amount_charged: {
+      type: ['number', 'null'],
+      description: 'Surplus Tax charge amount, kept separate from tax_amount',
     },
     confidence: { type: 'number', description: '0 to 1' },
     flags: { type: 'array', items: { type: 'string', enum: FLAG_VALUES } },
@@ -149,7 +155,10 @@ Rules:
 10. confidence is your own certainty in the whole record, from 0 to 1.
 11. Never invent a value. If a field is not clearly present, return null.
    For a regulated financial document, null is always better than a guess.
-   Do not substitute an empty string, "N/A", or 0 for a missing value.`;
+  Do not substitute an empty string, "N/A", or 0 for a missing value.
+12. "Surplus Tax", "SurplusTax", and "Surplus Tax Charge" are surplus charges,
+  not tax. Preserve their amount in surplus_amount_charged and exclude it from
+  tax_amount. Ordinary Sales Tax, State Tax, Local Tax, and Tax remain tax.`;
 
 const MAX_RAW_TEXT = 3_000;
 
@@ -279,6 +288,7 @@ function canonicalize(parsed: Record<string, unknown>): NormalizedInvoice {
   const subtotalAmount = asAmount(parsed['subtotal_amount']);
   const taxAmount = asAmount(parsed['tax_amount']);
   const totalAmount = asAmount(parsed['total_amount']);
+  const surplusAmountCharged = asAmount(parsed['surplus_amount_charged']);
 
   // total_mismatch is only meaningful when all three figures are printed. An
   // invoice that states just a total / balance due (no separate subtotal) is
@@ -304,6 +314,7 @@ function canonicalize(parsed: Record<string, unknown>): NormalizedInvoice {
     poNumber: asText(parsed['po_number']),
     achRoutingNumber: asText(parsed['ach_routing_number']),
     achAccountNumber: asText(parsed['ach_account_number']),
+    surplusAmountCharged,
     confidence,
     flags: [...flags],
   };
