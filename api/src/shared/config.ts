@@ -59,6 +59,17 @@ export const config = {
       return optional('SETTINGS_ENC_KEY', this.sessionSecret);
     },
     /**
+     * Server-side pepper for hashing machine API keys (see
+     * shared/repository/apiKeys.ts). Keys are stored as a keyed HMAC-SHA256, not
+     * a bare hash, so a database-only leak cannot be used to verify guessed keys
+     * offline. Falls back to `settingsEncKey` so it works without extra
+     * configuration; set a dedicated `API_KEY_PEPPER` in production. Rotating it
+     * invalidates all existing API keys — rotate the Power Automate key after.
+     */
+    get apiKeyPepper() {
+      return optional('API_KEY_PEPPER', this.settingsEncKey);
+    },
+    /**
      * Whether the session cookie is marked Secure. True in Azure (HTTPS);
      * false locally over plain HTTP so the cookie is accepted.
      */

@@ -1,7 +1,7 @@
 /**
  * API keys for machine clients (the Power Automate ingestion flow).
  *
- * Only a SHA-256 hash of each key is stored — the raw key is shown once, at
+ * Only a keyed HMAC-SHA256 of each key is stored — the raw key is shown once, at
  * generation, and never again (matching the "no secrets in the database" rule).
  * A valid key authenticates as the Power Automate service account; role and
  * permissions then flow from that user exactly as for an interactive session.
@@ -11,7 +11,8 @@
  * change, which the app's least-privileged DB role could not perform anyway.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
+import { config } from '../config';
 import { query, queryOne } from '../db';
 
 /** The default service account a Power Automate key authenticates as. */
@@ -27,8 +28,18 @@ export interface ApiKeyMeta {
   lastUsedAt: string | null;
 }
 
+/**
+ * Deterministically hash a raw key for storage/lookup.
+ *
+ * The raw key is 256 bits of CSPRNG entropy (see generateRawKey), so it is not
+ * brute-forceable and a slow password KDF (bcrypt/scrypt/argon2) would add no
+ * meaningful protection — and, being salted/non-deterministic, would break the
+ * indexed `WHERE key_hash = $1` lookup in verifyKey. Instead we use a keyed
+ * HMAC-SHA256 with a server-side pepper: still deterministic, but a database-only
+ * leak cannot be used to verify guessed keys without also holding the pepper.
+ */
 function hashKey(raw: string): string {
-  return createHash('sha256').update(raw).digest('hex');
+  return createHmac('sha256', config.auth.apiKeyPepper).update(raw).digest('hex');
 }
 
 /** A new raw key: 'pa_' + 43 url-safe chars. Only ever returned once. */
