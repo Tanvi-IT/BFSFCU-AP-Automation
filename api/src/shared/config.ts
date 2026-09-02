@@ -60,9 +60,9 @@ export const config = {
     },
     /**
      * Server-side pepper for hashing machine API keys (see
-     * shared/repository/apiKeys.ts). Keys are stored as a keyed HMAC-SHA256, not
-     * a bare hash, so a database-only leak cannot be used to verify guessed keys
-     * offline. Falls back to `settingsEncKey` so it works without extra
+     * shared/repository/apiKeys.ts). Keys are stored as an scrypt hash salted
+     * with this pepper, so a database-only leak cannot be used to verify guessed
+     * keys offline. Falls back to `settingsEncKey` so it works without extra
      * configuration; set a dedicated `API_KEY_PEPPER` in production. Rotating it
      * invalidates all existing API keys — rotate the Power Automate key after.
      */

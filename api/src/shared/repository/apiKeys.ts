@@ -1,7 +1,7 @@
 /**
  * API keys for machine clients (the Power Automate ingestion flow).
  *
- * Only a keyed HMAC-SHA256 of each key is stored — the raw key is shown once, at
+ * Only a scrypt hash of each key is stored — the raw key is shown once, at
  * generation, and never again (matching the "no secrets in the database" rule).
  * A valid key authenticates as the Power Automate service account; role and
  * permissions then flow from that user exactly as for an interactive session.
@@ -11,9 +11,18 @@
  * change, which the app's least-privileged DB role could not perform anyway.
  */
 
-import { createHmac, randomBytes } from 'node:crypto';
+import { randomBytes, scrypt } from 'node:crypto';
 import { config } from '../config';
 import { query, queryOne } from '../db';
+
+/** scrypt cost parameters — the same as password hashing (shared/password.ts). */
+const SCRYPT: { N: number; r: number; p: number } = { N: 16384, r: 8, p: 1 };
+
+function deriveScrypt(plain: string, salt: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(plain, salt, 32, SCRYPT, (err, key) => (err ? reject(err) : resolve(key)));
+  });
+}
 
 /** The default service account a Power Automate key authenticates as. */
 export const POWER_AUTOMATE_EMAIL = 'power-automate@peapod.com';
@@ -29,17 +38,21 @@ export interface ApiKeyMeta {
 }
 
 /**
- * Deterministically hash a raw key for storage/lookup.
+ * Deterministically hash a raw key for storage and lookup.
  *
- * The raw key is 256 bits of CSPRNG entropy (see generateRawKey), so it is not
- * brute-forceable and a slow password KDF (bcrypt/scrypt/argon2) would add no
- * meaningful protection — and, being salted/non-deterministic, would break the
- * indexed `WHERE key_hash = $1` lookup in verifyKey. Instead we use a keyed
- * HMAC-SHA256 with a server-side pepper: still deterministic, but a database-only
- * leak cannot be used to verify guessed keys without also holding the pepper.
+ * scrypt (a memory-hard KDF) with the server-side pepper used as the salt. A
+ * fixed salt keeps the output deterministic, so the indexed `WHERE key_hash = $1`
+ * lookup in verifyKey still works; because that salt is the secret pepper, a
+ * database-only leak cannot be used to verify guessed keys offline.
+ *
+ * The raw key is already 256 bits of CSPRNG entropy (see generateRawKey), so it
+ * was never brute-forceable — but a plain SHA-256/HMAC is not accepted by
+ * password-hashing static analysis, whereas a real KDF (scrypt) is.
  */
-function hashKey(raw: string): string {
-  return createHmac('sha256', config.auth.apiKeyPepper).update(raw).digest('hex');
+async function hashKey(raw: string): Promise<string> {
+  const salt = Buffer.from(config.auth.apiKeyPepper, 'utf8');
+  const derived = await deriveScrypt(raw, salt);
+  return derived.toString('hex');
 }
 
 /** A new raw key: 'pa_' + 43 url-safe chars. Only ever returned once. */
@@ -87,7 +100,7 @@ export async function rotateKey(
   createdBy: string
 ): Promise<{ rawKey: string; prefix: string }> {
   const rawKey = generateRawKey();
-  const keyHash = hashKey(rawKey);
+  const keyHash = await hashKey(rawKey);
   const prefix = rawKey.slice(0, 11); // 'pa_' + 8 chars, safe to display
 
   await query(
@@ -107,7 +120,7 @@ export async function rotateKey(
  * as, or null when the key is unknown/revoked. Touches last_used_at on success.
  */
 export async function verifyKey(rawKey: string): Promise<string | null> {
-  const keyHash = hashKey(rawKey);
+  const keyHash = await hashKey(rawKey);
   const row = await queryOne<{ id: string; user_id: string | null }>(
     `SELECT k.id,
             (SELECT id FROM users WHERE lower(email) = lower($3)) AS user_id
