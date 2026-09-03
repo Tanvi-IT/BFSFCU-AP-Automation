@@ -250,6 +250,44 @@ export async function updateFileHash(id: string, fileHash: string): Promise<void
   await query(`UPDATE invoices SET file_hash = $2 WHERE id = $1`, [id, fileHash]);
 }
 
+/** The ingest fields needed to spawn sibling rows when splitting a bundle. */
+export interface IngestInfo {
+  submitted_by: string | null;
+  original_filename: string | null;
+  source: InvoiceSource;
+}
+
+export async function ingestInfo(id: string): Promise<IngestInfo | undefined> {
+  return queryOne<IngestInfo>(
+    `SELECT submitted_by, original_filename, source FROM invoices WHERE id = $1`,
+    [id]
+  );
+}
+
+/**
+ * Repoint an existing invoice row at one split piece of a bundle: swap in the
+ * per-invoice blob, its new hash and suffixed filename, and reset it to
+ * `queued` so the follow-up extract job processes it. Used for the first
+ * segment of a split (the remaining segments become new rows via createQueued).
+ */
+export async function repointToSplit(
+  id: string,
+  blobPath: string,
+  fileHash: string,
+  originalFilename: string
+): Promise<void> {
+  await query(
+    `UPDATE invoices
+        SET blob_path = $2,
+            file_hash = $3,
+            original_filename = $4,
+            status = 'queued',
+            processing_error = NULL
+      WHERE id = $1`,
+    [id, blobPath, fileHash, originalFilename]
+  );
+}
+
 export async function getById(id: string): Promise<InvoiceRow | undefined> {
   return queryOne<InvoiceRow>(
     `SELECT i.*, COALESCE(i.raw_file_path, i.blob_path) AS raw_file_path,
