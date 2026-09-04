@@ -19,6 +19,13 @@ export interface InvoiceJob {
   blobPath: string;
   fileHash: string;
   source: 'manual_upload' | 'email_ingest' | 'api_ingest';
+  /**
+   * Pipeline stage. Absent on the initial upload job: the worker runs the
+   * classifier-split stage first (when a classifier is configured), which then
+   * enqueues one `extract` job per detected invoice. An `extract` job (or any
+   * job when no classifier is configured) runs the normal extraction pipeline.
+   */
+  stage?: 'split' | 'extract';
   /** Incremented by the worker when it re-queues deliberately. */
   attempt?: number;
 }

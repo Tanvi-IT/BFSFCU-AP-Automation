@@ -53,3 +53,14 @@ export async function openAiAuthHeaders(): Promise<Record<string, string>> {
   if (key) return { 'api-key': key };
   return { Authorization: `Bearer ${await getCognitiveToken()}` };
 }
+
+/**
+ * Auth headers for the custom classification model. Same rules as Document
+ * Intelligence, but reads the classifier-specific key so the classifier can
+ * live on a different resource than the extraction endpoint.
+ */
+export async function docIntelClassifierAuthHeaders(): Promise<Record<string, string>> {
+  const key = config.ai.docIntelClassifierKey;
+  if (key) return { 'Ocp-Apim-Subscription-Key': key };
+  return { Authorization: `Bearer ${await getCognitiveToken()}` };
+}

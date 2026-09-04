@@ -59,6 +59,17 @@ export const config = {
       return optional('SETTINGS_ENC_KEY', this.sessionSecret);
     },
     /**
+     * Server-side pepper for hashing machine API keys (see
+     * shared/repository/apiKeys.ts). Keys are stored as an scrypt hash salted
+     * with this pepper, so a database-only leak cannot be used to verify guessed
+     * keys offline. Falls back to `settingsEncKey` so it works without extra
+     * configuration; set a dedicated `API_KEY_PEPPER` in production. Rotating it
+     * invalidates all existing API keys — rotate the Power Automate key after.
+     */
+    get apiKeyPepper() {
+      return optional('API_KEY_PEPPER', this.settingsEncKey);
+    },
+    /**
      * Whether the session cookie is marked Secure. True in Azure (HTTPS);
      * false locally over plain HTTP so the cookie is accepted.
      */
@@ -127,6 +138,28 @@ export const config = {
      */
     get docIntelKey() {
       return process.env['DOCINTEL_KEY'] ?? '';
+    },
+    /**
+     * Optional custom classification model that splits a bundled PDF (several
+     * invoices in one file) into per-invoice page ranges. The whole split
+     * feature is INERT unless this is set — leave it empty and every upload is
+     * processed as a single document exactly as before.
+     */
+    get docIntelClassifierId() {
+      return optional('DOCINTEL_CLASSIFIER_ID', '');
+    },
+    /**
+     * Endpoint hosting the classifier. Defaults to the main Document
+     * Intelligence endpoint, so if the classifier lives on the same resource no
+     * extra config is needed; override only when it was trained on a different
+     * resource.
+     */
+    get docIntelClassifierEndpoint() {
+      return optional('DOCINTEL_CLASSIFIER_ENDPOINT', this.docIntelEndpoint);
+    },
+    /** API key for the classifier resource. Defaults to the main DI key. */
+    get docIntelClassifierKey() {
+      return optional('DOCINTEL_CLASSIFIER_KEY', this.docIntelKey);
     },
     get openAiEndpoint() {
       return required('AOAI_ENDPOINT');

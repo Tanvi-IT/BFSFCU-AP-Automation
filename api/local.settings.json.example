@@ -28,6 +28,10 @@
 
     "DOCINTEL_ENDPOINT": "https://<your-docintel>.cognitiveservices.azure.com",
     "DOCINTEL_KEY": "<docintel-key-for-local-dev-only>",
+    "//DOCINTEL_CLASSIFIER": "Optional. Set DOCINTEL_CLASSIFIER_ID to a trained custom classification model to auto-split a bundled PDF (several invoices in one file) into per-invoice records. Leave the ID empty to disable splitting entirely. ENDPOINT/KEY default to the DOCINTEL_ values above; set them only when the classifier lives on a different resource.",
+    "DOCINTEL_CLASSIFIER_ID": "",
+    "DOCINTEL_CLASSIFIER_ENDPOINT": "",
+    "DOCINTEL_CLASSIFIER_KEY": "",
     "AOAI_ENDPOINT": "https://<your-openai>.openai.azure.com",
     "AOAI_KEY": "<openai-key-for-local-dev-only>",
     "AOAI_DEPLOYMENT": "gpt-4o",
