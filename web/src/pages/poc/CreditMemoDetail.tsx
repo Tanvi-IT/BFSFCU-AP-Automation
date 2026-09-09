@@ -48,9 +48,15 @@ export default function CreditMemoDetail() {
     <Layout>
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/credit-memos")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              navigate(memo?.document_type === "non_invoice" ? "/non-invoices" : "/credit-memos")
+            }
+          >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Credit Memos
+            {memo?.document_type === "non_invoice" ? "Non-Invoices" : "Credit Memos"}
           </Button>
         </div>
 

@@ -19,6 +19,7 @@ import {
   Inbox,
   Server,
   FileText,
+  Files,
 } from "lucide-react";
 import {
   Sidebar,
@@ -70,8 +71,10 @@ const queueNavItems: {
   { title: "Declined", url: "/declined", icon: XCircle },
   // Approved is a filtered view of the invoice list, not its own page.
   { title: "Approved", url: "/invoices?status=approved", icon: CheckCheck },
-  // Credit memos are classified out of the invoice pipeline into their own list.
+  // Credit memos and other non-invoice documents are classified out of the
+  // invoice pipeline into their own lists.
   { title: "Credit Memo", url: "/credit-memos", icon: FileText },
+  { title: "Non-Invoice", url: "/non-invoices", icon: Files },
 ];
 
 /** Administration — everyone sees the first three; the rest are admin-only. */

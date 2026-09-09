@@ -34,6 +34,7 @@ import InboxMonitor from "./pages/poc/InboxMonitor";
 import PrologueSettings from "./pages/poc/PrologueSettings";
 import CreditMemoList from "./pages/poc/CreditMemoList";
 import CreditMemoDetail from "./pages/poc/CreditMemoDetail";
+import NonInvoiceList from "./pages/poc/NonInvoiceList";
 
 const queryClient = new QueryClient();
 
@@ -73,9 +74,12 @@ const App = () => {
             <Route path="/exceptions/:id" element={<AuthGate><ExceptionDetail /></AuthGate>} />
             <Route path="/declined" element={<AuthGate><DeclinedQueue /></AuthGate>} />
 
-            {/* Credit memos — classified out of the invoice pipeline */}
+            {/* Credit memos & other non-invoice documents — classified out of the
+                invoice pipeline; both share the same document viewer. */}
             <Route path="/credit-memos" element={<AuthGate><CreditMemoList /></AuthGate>} />
             <Route path="/credit-memos/:id" element={<AuthGate><CreditMemoDetail /></AuthGate>} />
+            <Route path="/non-invoices" element={<AuthGate><NonInvoiceList /></AuthGate>} />
+            <Route path="/non-invoices/:id" element={<AuthGate><CreditMemoDetail /></AuthGate>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

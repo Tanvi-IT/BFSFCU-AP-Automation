@@ -25,6 +25,8 @@ export interface RoutingInput {
   vendorUnmatched: boolean;
   vendorActive: boolean;
   hasVendorName: boolean;
+  /** A usable invoice number was extracted. Missing → forced review. */
+  hasInvoiceNumber: boolean;
 }
 
 export interface RoutingResult {
@@ -58,6 +60,9 @@ export function routeInvoice(input: RoutingInput): RoutingResult {
   if (input.vendorUnmatched) {
     seen.add('vendor_not_found');
   }
+  if (!input.hasInvoiceNumber) {
+    seen.add('invoice_number_missing');
+  }
 
   const flags = [...seen];
   const hasCritical = flags.some((f) => CRITICAL_FLAGS.has(f));
@@ -87,10 +92,17 @@ export function routeInvoice(input: RoutingInput): RoutingResult {
 
   // A missing total is a review reason on its own: an invoice with no amount
   // cannot be approved for payment, so it never clears to High Confidence — even
-  // if the model reported high confidence in the rest of the record. (A missing
-  // invoice number is deliberately NOT treated this way; see TC-13.)
+  // if the model reported high confidence in the rest of the record.
   if (flags.includes('total_amount_missing')) {
     return { status: 'validated', riskLevel: 'high', flags };
+  }
+
+  // A missing invoice number likewise forces review: without one a payable
+  // cannot be reliably deduplicated or reconciled, so it never clears to High
+  // Confidence — even when the model is confident about the rest of the record.
+  // (This reverses the earlier TC-13 behaviour, by product decision.)
+  if (flags.includes('invoice_number_missing')) {
+    return { status: 'validated', riskLevel: 'medium', flags };
   }
 
   // Medium-risk reasons: missing/inactive vendor, low confidence, soft dup.

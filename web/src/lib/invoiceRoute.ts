@@ -22,9 +22,8 @@ export function invoiceRoute(
   id: string | undefined,
   documentType?: string | null
 ): string {
-  if (documentType === "credit_memo" || documentType === "non_invoice") {
-    return `/credit-memos/${id}`;
-  }
+  if (documentType === "non_invoice") return `/non-invoices/${id}`;
+  if (documentType === "credit_memo") return `/credit-memos/${id}`;
   switch (status) {
     case "exception":
       return `/exceptions/${id}`;

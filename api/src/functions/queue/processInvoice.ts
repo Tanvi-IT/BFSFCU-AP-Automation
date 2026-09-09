@@ -301,6 +301,7 @@ async function extractInvoice(job: InvoiceJob, invoiceLog: Logger): Promise<void
     vendorUnmatched: vendor.id === null,
     vendorActive: vendor.status === 'active',
     hasVendorName: Boolean(vendorName),
+    hasInvoiceNumber: Boolean(invoiceNumber),
   });
 
   // 7. Persist everything in one transaction.
