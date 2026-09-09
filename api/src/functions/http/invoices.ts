@@ -47,6 +47,29 @@ function looksLikePdf(bytes: Buffer): boolean {
 }
 
 /**
+ * Detect a supported upload type from the file's own magic bytes — PDF, PNG or
+ * JPEG — or null for anything else. The batch/email paths must decide from the
+ * bytes (no trustworthy caller content type), and Document Intelligence accepts
+ * all three, so an emailed PNG/JPEG invoice is ingested rather than discarded.
+ */
+function detectSupportedType(bytes: Buffer): 'application/pdf' | 'image/png' | 'image/jpeg' | null {
+  if (looksLikePdf(bytes)) return 'application/pdf';
+  // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
+    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+  // JPEG signature: FF D8 FF
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  return null;
+}
+
+/**
  * Decode a base64 (or data-URI) string to bytes, tolerating ONE extra layer of
  * base64 wrapping. Some machine callers double-encode: a Power Automate custom
  * connector whose `pdf_base64` parameter is typed `format: byte` base64-encodes
@@ -198,21 +221,23 @@ app.http('invoices', {
         };
 
         // A machine client (the email flow) can post every attachment from one
-        // email in a single request. Each PDF becomes its own invoice; any
-        // non-PDF attachment (inline images, logos, .docx …) is DISCARDED rather
-        // than failing the batch — one bad attachment can't sink the whole email.
+        // email in a single request. Each PDF/PNG/JPEG becomes its own invoice;
+        // any other attachment (logos in odd formats, .docx, TNEF stubs …) is
+        // DISCARDED rather than failing the batch — one bad attachment can't sink
+        // the whole email.
         const processBatch = async (items: Array<{ bytes: Buffer; filename: string }>) => {
           const created: Array<{ invoiceId: string; filename: string }> = [];
           const discarded: Array<{ filename: string; reason: string }> = [];
           for (const { bytes, filename } of items) {
+            const contentType = detectSupportedType(bytes);
             if (bytes.length === 0) {
               discarded.push({ filename, reason: 'empty' });
             } else if (bytes.length > MAX_UPLOAD_BYTES) {
               discarded.push({ filename, reason: 'exceeds 20 MB' });
-            } else if (!looksLikePdf(bytes)) {
-              discarded.push({ filename, reason: 'not a PDF' });
+            } else if (!contentType) {
+              discarded.push({ filename, reason: 'unsupported type (not PDF/PNG/JPEG)' });
             } else {
-              const id = await persistUpload(bytes, filename, 'application/pdf', ingestSource);
+              const id = await persistUpload(bytes, filename, contentType, ingestSource);
               created.push({ invoiceId: id, filename });
             }
           }
@@ -280,24 +305,25 @@ app.http('invoices', {
           if (bytes.length > MAX_UPLOAD_BYTES) {
             throw AppError.validation('File exceeds the 20 MB limit');
           }
-          // The decoded content must actually be a PDF. Unlike the multipart path
-          // (which trusts the browser's content type) and the attachments batch
-          // (which silently discards non-PDFs), this single-document path used to
-          // store whatever it decoded — so a machine caller sending a malformed
-          // `pdf_base64` (e.g. an attachment reference/metadata object, or already
-          // decoded content) had a broken ~few-hundred-byte "invoice" created that
-          // could never extract. Reject it here with a clear, actionable error so
-          // the caller (a Power Automate flow) sees exactly what is wrong instead
-          // of silently producing an empty, stuck invoice.
-          if (!looksLikePdf(bytes)) {
+          // The decoded content must be a supported file (PDF/PNG/JPEG). Unlike
+          // the multipart path (which trusts the browser's content type) and the
+          // attachments batch (which silently discards unsupported types), this
+          // single-document path used to store whatever it decoded — so a machine
+          // caller sending a malformed `pdf_base64` (e.g. an attachment
+          // reference/metadata object, or already-decoded content) had a broken
+          // ~few-hundred-byte "invoice" created that could never extract. Reject
+          // it here with a clear, actionable error so the caller (a Power Automate
+          // flow) sees exactly what is wrong instead of a stuck empty invoice.
+          const contentType = detectSupportedType(bytes);
+          if (!contentType) {
             throw AppError.validation(
-              `Decoded "pdf_base64" is not a valid PDF (no %PDF header in ${bytes.length} bytes). ` +
-                'Send base64 of the PDF file itself — its raw contentBytes — not a reference, ' +
+              `Decoded content is not a supported file (${bytes.length} bytes; expected PDF, PNG, or JPEG). ` +
+                'Send base64 of the file itself — its raw contentBytes — not a reference, ' +
                 'metadata object, or already-decoded content.'
             );
           }
           const filename = body.filename || body.fileName || 'invoice.pdf';
-          const id = await persistUpload(bytes, filename, 'application/pdf', ingestSource);
+          const id = await persistUpload(bytes, filename, contentType, ingestSource);
           log.info('Invoice queued', { invoiceId: id, bytes: bytes.length });
           return accepted({ invoiceId: id, status: 'queued' });
         }
