@@ -69,10 +69,10 @@ export default function CreditMemoDetail() {
             <div>
               <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
                 <FileText className="h-6 w-6 text-muted-foreground" />
-                {memo.original_filename || "Credit Memo"}
+                {memo.original_filename || "Document"}
               </h1>
               <p className="text-muted-foreground mt-1">
-                Credit memo ·{" "}
+                {memo.document_type === "non_invoice" ? "Non-invoice document" : "Credit memo"} ·{" "}
                 {new Intl.DateTimeFormat("en-US", {
                   timeZone: "America/New_York",
                   month: "short",

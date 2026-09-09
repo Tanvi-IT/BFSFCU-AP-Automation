@@ -211,37 +211,39 @@ export async function saveProcessedInvoice(input: PersistInput): Promise<void> {
   });
 }
 
-export interface CreditMemoInput {
-  invoiceId: string;
-}
+/** A document class that is parked for viewing rather than processed as an invoice. */
+export type ParkedDocumentType = 'credit_memo' | 'non_invoice';
 
 /**
- * Mark a document as a credit memo — nothing more.
+ * Mark a document as parked (a credit memo or a non-invoice document) — nothing
+ * more.
  *
- * A credit memo is not a payable invoice, so the AI data stage, vendor match,
- * duplicate detection and routing are all skipped. For now we deliberately
- * extract NO fields: the row is only tagged `document_type = 'credit_memo'` (so
- * it is filtered out of every invoice queue) and parked at a settled,
- * non-in-flight status for a human to view in the Credit Memo list. The stored
- * file is what matters; which fields to capture, and how these tie back to an
- * invoice, is a later decision.
+ * Neither is a payable invoice, so the AI data stage, vendor match, duplicate
+ * detection and routing are all skipped. We deliberately extract NO fields: the
+ * row is only tagged with its `document_type` (so it is filtered out of every
+ * invoice queue) and parked at a settled, non-in-flight status for a human to
+ * view. The stored file is what matters; which fields to capture, and how these
+ * tie back to an invoice, is a later decision.
  */
-export async function saveCreditMemo(input: CreditMemoInput): Promise<void> {
+export async function saveParkedDocument(
+  invoiceId: string,
+  documentType: ParkedDocumentType
+): Promise<void> {
   await transaction(async (client) => {
     await client.query(
       `UPDATE invoices
-          SET document_type    = 'credit_memo',
+          SET document_type    = $2,
               status           = 'validated',
               auto_routed      = false,
               processing_error = NULL
         WHERE id = $1`,
-      [input.invoiceId]
+      [invoiceId, documentType]
     );
 
     await client.query(
       `INSERT INTO audit_logs (entity_type, entity_id, action, metadata)
        VALUES ('invoice', $1, 'processed', $2::jsonb)`,
-      [input.invoiceId, JSON.stringify({ documentType: 'credit_memo' })]
+      [invoiceId, JSON.stringify({ documentType })]
     );
   });
 }

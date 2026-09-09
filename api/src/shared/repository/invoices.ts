@@ -147,7 +147,7 @@ export interface ListFilters {
    * credit memos are kept out of every invoice queue. Pass 'credit_memo' to
    * return credit memos instead (the Credit Memo list).
    */
-  documentType?: 'invoice' | 'credit_memo';
+  documentType?: 'invoice' | 'credit_memo' | 'non_invoice';
   /** Inclusive `YYYY-MM-DD` bounds, applied to `dateField`. */
   dateFrom?: string;
   dateTo?: string;
@@ -163,13 +163,17 @@ export async function list(filters: ListFilters): Promise<InvoiceRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
 
-  // Credit memos live in their own list; keep them out of every invoice queue
-  // unless explicitly requested. Legacy rows have document_type NULL, so
-  // `IS DISTINCT FROM 'credit_memo'` keeps them counted as invoices.
-  if (filters.documentType === 'credit_memo') {
-    where.push(`i.document_type = 'credit_memo'`);
+  // Parked documents (credit memos and non-invoice documents) live in their own
+  // lists; keep them out of every invoice queue unless one is explicitly
+  // requested. Legacy/invoice rows have document_type NULL, so the DISTINCT FROM
+  // checks keep them counted as invoices.
+  if (filters.documentType === 'credit_memo' || filters.documentType === 'non_invoice') {
+    params.push(filters.documentType);
+    where.push(`i.document_type = $${params.length}`);
   } else {
-    where.push(`i.document_type IS DISTINCT FROM 'credit_memo'`);
+    where.push(
+      `i.document_type IS DISTINCT FROM 'credit_memo' AND i.document_type IS DISTINCT FROM 'non_invoice'`
+    );
   }
 
   if (filters.status) {
@@ -390,6 +394,7 @@ export async function countByStatus(): Promise<Record<string, number>> {
     `SELECT status, COUNT(*)::text AS count
        FROM invoices
       WHERE document_type IS DISTINCT FROM 'credit_memo'
+        AND document_type IS DISTINCT FROM 'non_invoice'
       GROUP BY status`
   );
   return Object.fromEntries(rows.map((r) => [r.status, Number(r.count)]));

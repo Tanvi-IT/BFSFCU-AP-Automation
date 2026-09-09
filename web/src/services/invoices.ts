@@ -144,7 +144,7 @@ export interface ListParams {
    * are excluded from every invoice queue. Pass 'credit_memo' for the Credit
    * Memo list.
    */
-  documentType?: "invoice" | "credit_memo";
+  documentType?: "invoice" | "credit_memo" | "non_invoice";
   /** Inclusive `YYYY-MM-DD` bounds. Both ends are optional. */
   dateFrom?: string;
   dateTo?: string;

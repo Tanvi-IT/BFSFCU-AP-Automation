@@ -13,8 +13,13 @@ import { config } from '../config';
 import { docIntelAuthHeaders } from './credential';
 import { AppError } from '../errors';
 
-/** What the document is. A credit memo is not a payable invoice. */
-export type DocumentType = 'invoice' | 'credit_memo';
+/**
+ * What the document is. Only `invoice` is a payable invoice; `credit_memo` and
+ * `non_invoice` are parked for a human to view, not run through the AI data
+ * stage. `non_invoice` is the catch-all for recognisable non-invoice documents
+ * (purchase orders, statements, remittance advices, etc.).
+ */
+export type DocumentType = 'invoice' | 'credit_memo' | 'non_invoice';
 
 export interface ExtractedInvoice {
   invoiceNumber: string | null;
@@ -44,22 +49,63 @@ const CREDIT_MEMO_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * Classify the document from its OCR text: a payable INVOICE, or a CREDIT MEMO
- * (a.k.a. credit note / memorandum) that reduces what is owed.
+ * Strong signals that a document IS a payable invoice. Checked BEFORE the
+ * non-invoice titles below, so a real invoice that merely references a PO
+ * number or a statement is never diverted into the non-invoice bucket.
+ */
+const INVOICE_PATTERNS: readonly RegExp[] = [
+  /\btax\s+invoice\b/i,
+  /\binvoice\b/i,
+  /\bamount\s+due\b/i,
+  /\binvoice\s*(?:number|no\.?|#)/i,
+];
+
+/**
+ * Titles of documents that are NOT payable invoices. Positive matches only —
+ * these are document titles (not incidental references), and they are only
+ * consulted after the invoice check above fails.
+ */
+const NON_INVOICE_PATTERNS: readonly RegExp[] = [
+  /\bpurchase\s*order\b/i,
+  /\bsales\s+order\b/i,
+  /\bwork\s+order\b/i,
+  /\bstatement\s+of\s+account\b/i,
+  /\baccount\s+statement\b/i,
+  /\bremittance\s+advice\b/i,
+  /\bpacking\s*(?:slip|list)\b/i,
+  /\bdelivery\s*(?:note|order)\b/i,
+  /\bpurchase\s+agreement\b/i,
+  /\bquotation\b/i,
+  /\bform\s+w-?9\b/i,
+];
+
+/**
+ * Classify the document from its OCR text — the same lightweight keyword scan
+ * used for credit memos, extended to a `non_invoice` catch-all:
  *
- * The `prebuilt-invoice` model does not distinguish the two — it labels
- * everything `docType: "invoice"` — so we read the text itself. Only the header
- * region (the first ~1500 characters, where a document states what it is) is
- * examined, so an ordinary invoice that merely mentions "credit memo" deep in
- * its terms is not misclassified.
+ *   1. a CREDIT MEMO (credit note / memorandum),
+ *   2. otherwise a payable INVOICE (matched positively, so it wins over a
+ *      referenced PO / statement),
+ *   3. otherwise a recognisable NON-INVOICE document (PO, statement, quote…),
+ *   4. otherwise defaults to INVOICE — never park a document we can't place,
+ *      since the core flow is invoice processing.
  *
- * This is a deliberately simple, no-extra-AI signal, isolated here so it can be
- * upgraded to a trained classifier later without touching the worker.
+ * The `prebuilt-invoice` model labels everything `docType: "invoice"`, so we
+ * read the text ourselves. Only the header region (first ~1500 chars, where a
+ * document states what it is) is examined. Deliberately simple and no-extra-AI,
+ * isolated here so it can be upgraded to a trained classifier without touching
+ * the worker.
  */
 export function classifyDocumentType(rawText: string): DocumentType {
   const header = (rawText ?? '').slice(0, 1500);
   for (const pattern of CREDIT_MEMO_PATTERNS) {
     if (pattern.test(header)) return 'credit_memo';
+  }
+  for (const pattern of INVOICE_PATTERNS) {
+    if (pattern.test(header)) return 'invoice';
+  }
+  for (const pattern of NON_INVOICE_PATTERNS) {
+    if (pattern.test(header)) return 'non_invoice';
   }
   return 'invoice';
 }

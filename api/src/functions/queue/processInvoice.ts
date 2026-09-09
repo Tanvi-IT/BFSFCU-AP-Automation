@@ -30,7 +30,7 @@ import {
 import { resolveVendor } from '../../shared/pipeline/vendorMatch';
 import { detectDuplicate } from '../../shared/pipeline/duplicateCheck';
 import { routeInvoice } from '../../shared/pipeline/routing';
-import { saveProcessedInvoice, saveCreditMemo } from '../../shared/pipeline/persist';
+import { saveProcessedInvoice, saveParkedDocument } from '../../shared/pipeline/persist';
 import { computeTaxAdjustment } from '../../shared/pipeline/taxflag';
 import { keepPageRange } from '../../shared/pdf';
 import * as invoices from '../../shared/repository/invoices';
@@ -176,16 +176,17 @@ async function extractInvoice(job: InvoiceJob, invoiceLog: Logger): Promise<void
     documentType: extracted.documentType,
   });
 
-  // 2b. Classify. A credit memo is not a payable invoice: tag it and park it
-  //     in the Credit Memo list for a human to view. No fields are extracted
-  //     for now — the AI data stage, vendor matching, duplicate detection and
-  //     routing are all skipped.
-  if (extracted.documentType === 'credit_memo') {
-    invoiceLog.info('Classified as credit memo; skipping AI data stage', {
+  // 2b. Classify. Anything that isn't a payable invoice — a credit memo or a
+  //     recognisable non-invoice document — is tagged and parked for a human to
+  //     view under the Credit Memo section. No fields are extracted; the AI data
+  //     stage, vendor matching, duplicate detection and routing are all skipped.
+  if (extracted.documentType !== 'invoice') {
+    invoiceLog.info('Classified as non-payable document; skipping AI data stage', {
+      documentType: extracted.documentType,
       documentNumber: extracted.invoiceNumber,
     });
-    await saveCreditMemo({ invoiceId: job.invoiceId });
-    invoiceLog.info('Credit memo stored');
+    await saveParkedDocument(job.invoiceId, extracted.documentType);
+    invoiceLog.info('Parked document stored', { documentType: extracted.documentType });
     return;
   }
 
