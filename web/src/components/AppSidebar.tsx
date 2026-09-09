@@ -72,9 +72,9 @@ const queueNavItems: {
   // Approved is a filtered view of the invoice list, not its own page.
   { title: "Approved", url: "/invoices?status=approved", icon: CheckCheck },
   // Credit memos and other non-invoice documents are classified out of the
-  // invoice pipeline into their own lists.
-  { title: "Credit Memo", url: "/credit-memos", icon: FileText },
-  { title: "Non-Invoice", url: "/non-invoices", icon: Files },
+  // invoice pipeline into their own lists; the badge shows how many are parked.
+  { title: "Credit Memo", url: "/credit-memos", icon: FileText, countStatus: "credit_memo" },
+  { title: "Non-Invoice", url: "/non-invoices", icon: Files, countStatus: "non_invoice" },
 ];
 
 /** Administration — everyone sees the first three; the rest are admin-only. */
@@ -212,7 +212,7 @@ export function AppSidebar() {
             {count > 0 && (
               <span
                 className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border bg-muted px-1.5 text-xs font-medium text-muted-foreground"
-                title={`${count} awaiting review`}
+                title={`${count} item${count === 1 ? "" : "s"}`}
               >
                 {count}
               </span>

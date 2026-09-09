@@ -397,7 +397,19 @@ export async function countByStatus(): Promise<Record<string, number>> {
         AND document_type IS DISTINCT FROM 'non_invoice'
       GROUP BY status`
   );
-  return Object.fromEntries(rows.map((r) => [r.status, Number(r.count)]));
+  const counts = Object.fromEntries(rows.map((r) => [r.status, Number(r.count)]));
+
+  // Parked document classes are counted separately (they were excluded above)
+  // so the sidebar can badge the Credit Memo and Non-Invoice items.
+  const parked = await query<{ document_type: string; count: string }>(
+    `SELECT document_type, COUNT(*)::text AS count
+       FROM invoices
+      WHERE document_type IN ('credit_memo', 'non_invoice')
+      GROUP BY document_type`
+  );
+  for (const r of parked) counts[r.document_type] = Number(r.count);
+
+  return counts;
 }
 
 export interface LineItemRow {

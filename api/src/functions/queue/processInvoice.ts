@@ -90,10 +90,27 @@ async function splitStage(job: InvoiceJob, invoiceLog: Logger): Promise<void> {
   invoiceLog.info('Classifier split complete', {
     documents: segments.length,
     invoices: invoiceSegments.length,
+    classes: segments.map((s) => s.docType),
     ranges: invoiceSegments.map((s) => `${s.startPage}-${s.endPage}`),
   });
 
-  // 0 or 1 invoice → nothing to split; process the whole file in place.
+  // The classifier found something, but none of it is an invoice — the whole
+  // file is a non-invoice document (e.g. a deck, a statement, a purchase order).
+  // Park it under Non-Invoice rather than defaulting it into invoice extraction,
+  // which is how such files used to slip into Low Confidence. This is the trained
+  // model's verdict, far more reliable than the keyword fallback.
+  if (invoiceSegments.length === 0 && segments.length > 0) {
+    invoiceLog.info('Classifier found no invoice; parking as non-invoice', {
+      classes: segments.map((s) => s.docType),
+    });
+    await saveParkedDocument(job.invoiceId, 'non_invoice');
+    invoiceLog.info('Parked document stored', { documentType: 'non_invoice' });
+    return;
+  }
+
+  // 0 or 1 invoice → nothing to split; process the whole file in place. (0 only
+  // reaches here when the classifier returned nothing at all — handled above
+  // otherwise — so extraction still runs rather than losing the document.)
   if (invoiceSegments.length <= 1) {
     return extractInvoice(job, invoiceLog);
   }
